@@ -1,3 +1,4 @@
+import streamlit as st
 from supabase import create_client, Client
 
 # --- INICIALIZACIÓN SECRETA DEL CLIENTE SUPABASE ---
