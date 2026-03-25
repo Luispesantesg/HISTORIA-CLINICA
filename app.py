@@ -1,14 +1,54 @@
 import streamlit as st
+import hmac
 from supabase import create_client, Client
 from fpdf import FPDF
 from datetime import datetime
 import pandas as pd
 
 # ==========================================
-# 1. CONFIGURACIÓN DEL ENTORNO Y SEGURIDAD
+# 1. CONFIGURACIÓN DEL ENTORNO
 # ==========================================
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
+# ==========================================
+# 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD (NUEVO)
+# ==========================================
+def verificar_autenticacion() -> bool:
+    if st.session_state.get("autenticado", False):
+        return True
+
+    st.title("🔒 Portal de Acceso Restringido")
+    st.markdown("Sistema de Historia Clínica Electrónica - Acceso Exclusivo Médico")
+    
+    with st.form("formulario_login"):
+        usuario = st.text_input("Identificador de Usuario:").strip()
+        contrasena = st.text_input("Clave de Acceso:", type="password").strip()
+        submit = st.form_submit_button("Iniciar Sesión", type="primary")
+
+        if submit:
+            try:
+                usuario_valido = hmac.compare_digest(usuario, st.secrets["ADMIN_USER"])
+                pass_valida = hmac.compare_digest(contrasena, st.secrets["ADMIN_PASS"])
+                
+                if usuario_valido and pass_valida:
+                    st.session_state["autenticado"] = True
+                    st.rerun()
+                else:
+                    st.error("Brecha de Seguridad: Credenciales inválidas. Acceso denegado.")
+            except KeyError:
+                st.error("Falla Crítica: Variables de entorno ADMIN_USER o ADMIN_PASS no definidas.")
+                
+    return False
+
+# ------------------------------------------
+# BARRERA LÓGICA DE EJECUCIÓN (INTERRUPCIÓN)
+# ------------------------------------------
+if not verificar_autenticacion():
+    st.stop()
+
+# ==========================================
+# 3. BASE DE DATOS Y MOTOR PDF (TU CÓDIGO ORIGINAL)
+# ==========================================
 @st.cache_resource
 def init_connection() -> Client:
     url = st.secrets["SUPABASE_URL"]
@@ -21,9 +61,6 @@ except Exception as e:
     st.error(f"Falla crítica en la inicialización de la base de datos: {e}")
     st.stop()
 
-# ==========================================
-# 2. MOTOR DE RENDERIZADO MÉDICO-LEGAL (PDF)
-# ==========================================
 def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico):
     pdf = FPDF()
     pdf.add_page()
