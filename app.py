@@ -67,4 +67,45 @@ def cargar_catalogo_cie10_csv() -> list:
         df['CODIGO'] = df['CODIGO'].fillna("").str.strip()
         df['DESCRIPCION'] = df['DESCRIPCION'].fillna("").str.strip()
         df['DIAGNOSTICO_COMPLETO'] = df['CODIGO'] + " - " + df['DESCRIPCION']
-        return df
+        return df['DIAGNOSTICO_COMPLETO'].tolist()
+    except FileNotFoundError:
+        return ["Error - Archivo 'cie10_completo.csv' no detectado en el servidor."]
+
+# ==========================================
+# 4. MATRIZ DE PERFILES Y EXPORTACIÓN PDF
+# ==========================================
+PERFILES_MEDICOS = {
+    "luis_pesantes": {
+        "nombre": "Dr. Luis M. Pesantes",
+        "especialidad": "Médico General",
+        "subtitulo": "Magíster en Salud Ocupacional"
+    },
+    "cinthia_garcia": {
+        "nombre": "Dra. Cinthia Anabel García Dávila",
+        "especialidad": "Médico General", 
+        "subtitulo": "Atención Médica Integral" 
+    }
+}
+
+def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perfil_medico):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, f"{perfil_medico['nombre']} - {perfil_medico['especialidad']}", ln=True, align='C')
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 5, perfil_medico['subtitulo'], ln=True, align='C')
+    pdf.line(10, 35, 200, 35)
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(30, 8, "Fecha:", border=0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(50, 8, fecha, ln=False)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(20, 8, "ID/Documento:", border=0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 8, id_paciente, ln=True)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(30, 8, "Paciente:", border=0)
+    pdf.set_font("Arial", '', 10
