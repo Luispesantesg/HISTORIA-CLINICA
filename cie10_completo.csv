@@ -1,17 +1,17 @@
 CODIGO,DESCRIPCION
 A099,Gastroenteritis y colitis de origen no especificado
 E119,Diabetes mellitus tipo 2 sin complicaciones
-E785,Hiperlipidemia, no especificada
+E785,"Hiperlipidemia, no especificada"
 F432,Trastornos de la adaptación (Estrés laboral)
-H109,Conjuntivitis, no especificada
-H659,Otitis media no supurativa, no especificada
+H109,"Conjuntivitis, no especificada"
+H659,"Otitis media no supurativa, no especificada"
 H903,Hipoacusia neurosensorial bilateral (Trauma acústico ocupacional)
 I10,Hipertensión esencial (primaria)
 J00,Rinofaringitis aguda [resfriado común]
-J019,Sinusitis aguda, no especificada
-J039,Amigdalitis aguda, no especificada
-J209,Bronquitis aguda, no especificada
-J449,Enfermedad pulmonar obstructiva crónica, no especificada
+J019,"Sinusitis aguda, no especificada"
+J039,"Amigdalitis aguda, no especificada"
+J209,"Bronquitis aguda, no especificada"
+J449,"Enfermedad pulmonar obstructiva crónica, no especificada"
 K219,Enfermedad del reflujo gastroesofágico sin esofagitis
 M544,Lumbago con ciática
 M545,Lumbago no especificado
@@ -21,4 +21,5 @@ R51,Cefalea
 Z000,Examen médico general (Chequeo preventivo ocupacional)
 Z021,Examen preempleo
 Z100,Examen de salud ocupacional de rutina
+Z566,Otras dificultades físicas y mentales relacionadas con el trabajo
 Z566,Otras dificultades físicas y mentales relacionadas con el trabajo
