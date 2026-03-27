@@ -11,7 +11,7 @@ import pandas as pd
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
 # ==========================================
-# 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD (NUEVO)
+# 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD
 # ==========================================
 def verificar_autenticacion() -> bool:
     if st.session_state.get("autenticado", False):
@@ -41,13 +41,13 @@ def verificar_autenticacion() -> bool:
     return False
 
 # ------------------------------------------
-# BARRERA LÓGICA DE EJECUCIÓN (INTERRUPCIÓN)
+# BARRERA LÓGICA DE EJECUCIÓN
 # ------------------------------------------
 if not verificar_autenticacion():
     st.stop()
 
 # ==========================================
-# 3. BASE DE DATOS Y MOTOR PDF (TU CÓDIGO ORIGINAL)
+# 3. MOTORES DE DATOS Y RENDERIZADO
 # ==========================================
 @st.cache_resource
 def init_connection() -> Client:
@@ -60,6 +60,20 @@ try:
 except Exception as e:
     st.error(f"Falla crítica en la inicialización de la base de datos: {e}")
     st.stop()
+
+@st.cache_data
+def cargar_catalogo_cie10_csv() -> list:
+    """
+    Carga el catálogo CIE-10 desde el disco virtual hacia la memoria RAM.
+    """
+    try:
+        df = pd.read_csv("cie10_completo.csv", dtype=str)
+        df['CODIGO'] = df['CODIGO'].fillna("").str.strip()
+        df['DESCRIPCION'] = df['DESCRIPCION'].fillna("").str.strip()
+        df['DIAGNOSTICO_COMPLETO'] = df['CODIGO'] + " - " + df['DESCRIPCION']
+        return df['DIAGNOSTICO_COMPLETO'].tolist()
+    except FileNotFoundError:
+        return ["Error - Archivo 'cie10_completo.csv' no detectado en el servidor."]
 
 def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico):
     pdf = FPDF()
@@ -101,12 +115,15 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico):
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 3. TOPOLOGÍA DE NAVEGACIÓN (PESTAÑAS)
+# 4. TOPOLOGÍA DE NAVEGACIÓN (PESTAÑAS)
 # ==========================================
 st.title("⚕️ Sistema Integrado de Historia Clínica")
 st.markdown("---")
 
 tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 Auditoría Longitudinal del Paciente"])
+
+# Pre-carga de la matriz CIE-10 para la interfaz
+lista_cie10 = cargar_catalogo_cie10_csv()
 
 # ------------------------------------------
 # NODO A: ESCRITURA Y EMISIÓN
@@ -142,7 +159,13 @@ with tab_ingreso:
             nodo_a = st.text_area("Apreciación (A):", height=120).strip()
             nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120).strip()
             
-        cie_10 = st.text_input("Diagnóstico CIE-10 Principal:").strip()
+        # Motor de búsqueda offline integrado en el formulario
+        cie_10_seleccion = st.selectbox(
+            "Diagnóstico CIE-10 Principal (Normativa Técnica):", 
+            options=lista_cie10, 
+            index=None,
+            placeholder="Haga clic aquí y escriba el código o patología para filtrar..."
+        )
 
         submitted = st.form_submit_button("Guardar Historia y Procesar Receta", type="primary")
 
@@ -151,6 +174,9 @@ with tab_ingreso:
             st.error("Error Lógico: La Cédula y el Plan de Tratamiento (P) son mandatorios.")
         else:
             try:
+                # Saneamiento de variables nulas
+                cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
+
                 paciente_data = {
                     "id_paciente": id_paciente, "nombres": nombres, "edad": edad, "sexo": sexo,
                     "antecedentes_personales": antecedentes_personales, "antecedentes_familiares": antecedentes_familiares
@@ -160,7 +186,7 @@ with tab_ingreso:
                 evolucion_data = {
                     "id_paciente": id_paciente, "motivo_consulta": motivo_consulta, "enfermedad_actual": enfermedad_actual,
                     "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
-                    "nodo_s": nodo_s, "nodo_o": nodo_o, "nodo_a": nodo_a, "nodo_p": nodo_p, "cie_10": cie_10
+                    "nodo_s": nodo_s, "nodo_o": nodo_o, "nodo_a": nodo_a, "nodo_p": nodo_p, "cie_10": cie_10_final
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
@@ -168,7 +194,7 @@ with tab_ingreso:
                 nombres_impresion = nombres if nombres else "Paciente No Registrado"
                 pdf_bytes = generar_receta_pdf(id_paciente, nombres_impresion, edad, fecha_actual, nodo_p)
                 
-                st.success(f"Protocolo Exitoso: Registro consolidado.")
+                st.success(f"Protocolo Exitoso: Registro consolidado. CIE-10 indexado: {cie_10_final}")
                 st.download_button("📥 Descargar Receta Médica (PDF)", data=pdf_bytes, file_name=f"Receta_{id_paciente}.pdf", mime="application/pdf")
 
             except Exception as e:
@@ -187,7 +213,6 @@ with tab_consulta:
 
     if btn_buscar and busqueda_id:
         try:
-            # 1. Extracción de Matriz Estática (APP / APF)
             res_paciente = supabase.table("pacientes").select("*").eq("id_paciente", busqueda_id).execute()
             
             if not res_paciente.data:
@@ -205,7 +230,6 @@ with tab_consulta:
                 
                 st.markdown("---")
                 
-                # 2. Extracción de Controles Evolutivos (Ordenados por Fecha)
                 st.markdown("### Línea de Tiempo Clínica (Controles Previos)")
                 res_evol = supabase.table("evoluciones").select("*").eq("id_paciente", busqueda_id).order("fecha", desc=True).execute()
                 
@@ -216,7 +240,6 @@ with tab_consulta:
                         raw_date = evol.get("fecha", "")
                         fmt_date = raw_date[:10] if raw_date else "Fecha desconocida"
                         
-                        # Generación de expansores (Dropdowns) para mantener orden jerárquico visual
                         with st.expander(f"🗓️ Control: {fmt_date} | Motivo: {evol.get('motivo_consulta', 'No especificado')} | CIE-10: {evol.get('cie_10', 'N/A')}"):
                             st.write(f"**Enfermedad Actual:** {evol.get('enfermedad_actual', 'N/A')}")
                             st.markdown("**Triaje Vital:**")
