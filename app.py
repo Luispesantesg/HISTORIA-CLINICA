@@ -127,7 +127,7 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 5. TOPOLOGÍA DE NAVEGACIÓN (PESTAÑAS)
+# 5. TOPOLOGÍA DE NAVEGACIÓN REACTIVA
 # ==========================================
 st.title("⚕️ Sistema Integrado de Historia Clínica")
 
@@ -140,49 +140,71 @@ tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 A
 lista_cie10 = cargar_catalogo_cie10_csv()
 
 # ------------------------------------------
-# NODO A: ESCRITURA Y EMISIÓN
+# NODO A: ESCRITURA Y EMISIÓN (HUD EN TIEMPO REAL)
 # ------------------------------------------
 with tab_ingreso:
-    with st.form("formulario_hce_general", clear_on_submit=True):
-        st.subheader("1. Filiación y Antecedentes")
-        col_fil_1, col_fil_2 = st.columns(2)
-        with col_fil_1:
-            id_paciente = st.text_input("Documento de Identidad (Obligatorio):").strip()
-            nombres = st.text_input("Apellidos y Nombres:").strip()
-            sexo = st.selectbox("Sexo Biológico:", ["Masculino", "Femenino"])
-            edad = st.number_input("Edad (Años):", min_value=0, max_value=120, step=1)
-        with col_fil_2:
-            antecedentes_personales = st.text_area("APP:", height=80).strip()
-            antecedentes_familiares = st.text_area("APF:", height=80).strip()
+    st.subheader("1. Filiación y Antecedentes")
+    col_fil_1, col_fil_2 = st.columns(2)
+    with col_fil_1:
+        id_paciente = st.text_input("Documento de Identidad (Obligatorio):").strip()
+        nombres = st.text_input("Apellidos y Nombres:").strip()
+        sexo = st.selectbox("Sexo Biológico:", ["Masculino", "Femenino"])
+        edad = st.number_input("Edad (Años):", min_value=0, max_value=120, step=1)
+    with col_fil_2:
+        antecedentes_personales = st.text_area("APP:", height=80).strip()
+        antecedentes_familiares = st.text_area("APF:", height=80).strip()
 
-        st.markdown("---")
-        st.subheader("2. Signos Vitales y Antropometría")
-        col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns(5)
-        with col_v1: pa = st.text_input("PA (mmHg):", placeholder="120/80").strip()
-        with col_v2: fc = st.number_input("FC (lpm):", min_value=0, step=1)
-        with col_v3: temp = st.number_input("Temp (°C):", format="%.1f", step=0.1)
-        with col_v4: peso_kg = st.number_input("Peso (kg):", format="%.2f", min_value=0.0, step=0.1)
-        with col_v5: talla_m = st.number_input("Talla (m):", format="%.2f", min_value=0.0, step=0.01)
+    st.markdown("---")
+    st.subheader("2. Signos Vitales y Antropometría")
+    col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns(5)
+    with col_v1: pa = st.text_input("PA (mmHg):", placeholder="120/80").strip()
+    with col_v2: fc = st.number_input("FC (lpm):", min_value=0, step=1)
+    with col_v3: temp = st.number_input("Temp (°C):", format="%.1f", step=0.1)
+    with col_v4: peso_kg = st.number_input("Peso (kg):", format="%.2f", min_value=0.0, step=0.1)
+    with col_v5: talla_m = st.number_input("Talla (m):", format="%.2f", min_value=0.0, step=0.01)
 
-        motivo_consulta = st.text_input("Motivo de Consulta:").strip()
-        enfermedad_actual = st.text_area("Enfermedad Actual:", height=100).strip()
+    # ==========================================
+    # HUD VISUAL: RADAR BIOMÉTRICO (SE ACTIVA AL TECLEAR)
+    # ==========================================
+    imc_texto_db = ""
+    if talla_m > 0 and peso_kg > 0:
+        imc_val = round(peso_kg / (talla_m ** 2), 2)
         
-        col_clin_1, col_clin_2 = st.columns(2)
-        with col_clin_1:
-            nodo_s = st.text_area("Subjetivo (S):", height=120).strip()
-            nodo_o = st.text_area("Objetivo (O):", height=120).strip()
-        with col_clin_2:
-            nodo_a = st.text_area("Apreciación (A):", height=120).strip()
-            nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120).strip()
+        if edad < 19:
+            st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada. Requiere validación manual en curvas de crecimiento OMS según edad y sexo.")
+            imc_texto_db = f"[Antropometría] IMC: {imc_val} - Riesgo Metabólico: Paciente pediátrico (Validar en curvas OMS)"
+        else:
+            if imc_val < 18.5: estrato, color = "Bajo peso", "🔵"
+            elif imc_val < 24.9: estrato, color = "Normopeso", "🟢"
+            elif imc_val < 29.9: estrato, color = "Sobrepeso", "🟡"
+            elif imc_val < 34.9: estrato, color = "Obesidad I", "🟠"
+            elif imc_val < 39.9: estrato, color = "Obesidad II", "🔴"
+            else: estrato, color = "Obesidad III", "🟣"
             
-        cie_10_seleccion = st.selectbox(
-            "Diagnóstico CIE-10 Principal (Normativa Técnica):", 
-            options=lista_cie10, 
-            index=None,
-            placeholder="Haga clic aquí y escriba el código o patología para filtrar..."
-        )
+            st.info(f"{color} **Radar Antropométrico:** IMC de **{imc_val}** - Estratificación OMS: **{estrato}**")
+            imc_texto_db = f"[Antropometría] IMC: {imc_val} ({estrato})"
 
-        submitted = st.form_submit_button("Guardar Historia y Procesar Receta", type="primary")
+    st.markdown("---")
+    motivo_consulta = st.text_input("Motivo de Consulta:").strip()
+    enfermedad_actual = st.text_area("Enfermedad Actual:", height=100).strip()
+    
+    col_clin_1, col_clin_2 = st.columns(2)
+    with col_clin_1:
+        nodo_s = st.text_area("Subjetivo (S):", height=120).strip()
+        nodo_o = st.text_area("Objetivo (O):", height=120).strip()
+    with col_clin_2:
+        nodo_a = st.text_area("Apreciación (A):", height=120).strip()
+        nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120).strip()
+        
+    cie_10_seleccion = st.selectbox(
+        "Diagnóstico CIE-10 Principal (Normativa Técnica):", 
+        options=lista_cie10, 
+        index=None,
+        placeholder="Haga clic aquí y escriba el código o patología para filtrar..."
+    )
+
+    # Botón maestro fuera del formulario
+    submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
 
     if submitted:
         if not id_paciente or not nodo_p:
@@ -191,28 +213,8 @@ with tab_ingreso:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
 
-                # ==========================================
-                # MOTOR DE CÁLCULO ANTROPOMÉTRICO CONDICIONAL
-                # ==========================================
-                imc_texto = ""
-                if talla_m > 0 and peso_kg > 0:
-                    imc_val = round(peso_kg / (talla_m ** 2), 2)
-                    
-                    if edad < 19:
-                        # Ruta Pediátrica: Requiere percentiles OMS
-                        imc_texto = f"[Antropometría] IMC: {imc_val} - Riesgo Metabólico: Paciente pediátrico (Validar en curvas OMS)"
-                    else:
-                        # Ruta Adulto: Estratificación estandarizada
-                        if imc_val < 18.5: estrato = "Bajo peso"
-                        elif imc_val < 24.9: estrato = "Normopeso"
-                        elif imc_val < 29.9: estrato = "Sobrepeso"
-                        elif imc_val < 34.9: estrato = "Obesidad I"
-                        elif imc_val < 39.9: estrato = "Obesidad II"
-                        else: estrato = "Obesidad III"
-                        imc_texto = f"[Antropometría] IMC: {imc_val} ({estrato})"
-
-                # Inyección del cálculo biométrico en el nodo Objetivo
-                nodo_o_final = f"{imc_texto}\n{nodo_o}" if imc_texto else nodo_o
+                # Fusión automática de telemetría biométrica
+                nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
 
                 paciente_data = {
                     "id_paciente": id_paciente, "nombres": nombres, "edad": edad, "sexo": sexo,
