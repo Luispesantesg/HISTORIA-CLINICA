@@ -11,7 +11,7 @@ import pandas as pd
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
 # ==========================================
-# 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD (MULTI-USUARIO)
+# 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD
 # ==========================================
 def verificar_autenticacion() -> bool:
     if st.session_state.get("autenticado", False):
@@ -27,15 +27,12 @@ def verificar_autenticacion() -> bool:
 
         if submit:
             try:
-                # Extracción de la matriz de credenciales desde la bóveda de Streamlit
                 matriz_usuarios = st.secrets["credenciales"]
-                
                 if usuario in matriz_usuarios:
                     pass_valida = hmac.compare_digest(contrasena, matriz_usuarios[usuario])
-                    
                     if pass_valida:
                         st.session_state["autenticado"] = True
-                        st.session_state["usuario_activo"] = usuario # Registro de trazabilidad
+                        st.session_state["usuario_activo"] = usuario
                         st.rerun()
                     else:
                         st.error("Brecha de Seguridad: Contraseña inválida. Acceso denegado.")
@@ -43,12 +40,8 @@ def verificar_autenticacion() -> bool:
                     st.error("Brecha de Seguridad: Identificador de usuario no reconocido.")
             except KeyError:
                 st.error("Falla Crítica: El bloque [credenciales] no está definido en secrets.toml.")
-                
     return False
 
-# ------------------------------------------
-# BARRERA LÓGICA DE EJECUCIÓN
-# ------------------------------------------
 if not verificar_autenticacion():
     st.stop()
 
@@ -99,13 +92,10 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
-    
-    # Inyección de metadatos del perfil activo
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, f"{perfil_medico['nombre']} - {perfil_medico['especialidad']}", ln=True, align='C')
     pdf.set_font("Arial", 'I', 10)
     pdf.cell(0, 5, perfil_medico['subtitulo'], ln=True, align='C')
-    
     pdf.line(10, 35, 200, 35)
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 10)
@@ -113,7 +103,7 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.set_font("Arial", '', 10)
     pdf.cell(50, 8, fecha, ln=False)
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(20, 8, "ID/Cedula:", border=0)
+    pdf.cell(20, 8, "ID/Documento:", border=0)
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 8, id_paciente, ln=True)
     pdf.set_font("Arial", 'B', 10)
@@ -141,14 +131,12 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
 # ==========================================
 st.title("⚕️ Sistema Integrado de Historia Clínica")
 
-# Identificación visual de la sesión activa
 usuario_actual = st.session_state.get("usuario_activo", "luis_pesantes")
 perfil_activo = PERFILES_MEDICOS.get(usuario_actual, PERFILES_MEDICOS["luis_pesantes"])
 st.caption(f"Sesión activa: {perfil_activo['nombre']}")
 st.markdown("---")
 
 tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 Auditoría Longitudinal del Paciente"])
-
 lista_cie10 = cargar_catalogo_cie10_csv()
 
 # ------------------------------------------
@@ -159,20 +147,22 @@ with tab_ingreso:
         st.subheader("1. Filiación y Antecedentes")
         col_fil_1, col_fil_2 = st.columns(2)
         with col_fil_1:
-            id_paciente = st.text_input("Cédula / ID (Obligatorio):").strip()
+            id_paciente = st.text_input("Documento de Identidad (Obligatorio):").strip()
             nombres = st.text_input("Apellidos y Nombres:").strip()
             sexo = st.selectbox("Sexo Biológico:", ["Masculino", "Femenino"])
-            edad = st.number_input("Edad:", min_value=0, max_value=120, step=1)
+            edad = st.number_input("Edad (Años):", min_value=0, max_value=120, step=1)
         with col_fil_2:
             antecedentes_personales = st.text_area("APP:", height=80).strip()
             antecedentes_familiares = st.text_area("APF:", height=80).strip()
 
         st.markdown("---")
-        st.subheader("2. Signos Vitales y Evolución")
-        col_v1, col_v2, col_v3 = st.columns(3)
+        st.subheader("2. Signos Vitales y Antropometría")
+        col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns(5)
         with col_v1: pa = st.text_input("PA (mmHg):", placeholder="120/80").strip()
         with col_v2: fc = st.number_input("FC (lpm):", min_value=0, step=1)
         with col_v3: temp = st.number_input("Temp (°C):", format="%.1f", step=0.1)
+        with col_v4: peso_kg = st.number_input("Peso (kg):", format="%.2f", min_value=0.0, step=0.1)
+        with col_v5: talla_m = st.number_input("Talla (m):", format="%.2f", min_value=0.0, step=0.01)
 
         motivo_consulta = st.text_input("Motivo de Consulta:").strip()
         enfermedad_actual = st.text_area("Enfermedad Actual:", height=100).strip()
@@ -196,10 +186,33 @@ with tab_ingreso:
 
     if submitted:
         if not id_paciente or not nodo_p:
-            st.error("Error Lógico: La Cédula y el Plan de Tratamiento (P) son mandatorios.")
+            st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento (P) son mandatorios.")
         else:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
+
+                # ==========================================
+                # MOTOR DE CÁLCULO ANTROPOMÉTRICO CONDICIONAL
+                # ==========================================
+                imc_texto = ""
+                if talla_m > 0 and peso_kg > 0:
+                    imc_val = round(peso_kg / (talla_m ** 2), 2)
+                    
+                    if edad < 19:
+                        # Ruta Pediátrica: Requiere percentiles OMS
+                        imc_texto = f"[Antropometría] IMC: {imc_val} - Riesgo Metabólico: Paciente pediátrico (Validar en curvas OMS)"
+                    else:
+                        # Ruta Adulto: Estratificación estandarizada
+                        if imc_val < 18.5: estrato = "Bajo peso"
+                        elif imc_val < 24.9: estrato = "Normopeso"
+                        elif imc_val < 29.9: estrato = "Sobrepeso"
+                        elif imc_val < 34.9: estrato = "Obesidad I"
+                        elif imc_val < 39.9: estrato = "Obesidad II"
+                        else: estrato = "Obesidad III"
+                        imc_texto = f"[Antropometría] IMC: {imc_val} ({estrato})"
+
+                # Inyección del cálculo biométrico en el nodo Objetivo
+                nodo_o_final = f"{imc_texto}\n{nodo_o}" if imc_texto else nodo_o
 
                 paciente_data = {
                     "id_paciente": id_paciente, "nombres": nombres, "edad": edad, "sexo": sexo,
@@ -210,14 +223,13 @@ with tab_ingreso:
                 evolucion_data = {
                     "id_paciente": id_paciente, "motivo_consulta": motivo_consulta, "enfermedad_actual": enfermedad_actual,
                     "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
-                    "nodo_s": nodo_s, "nodo_o": nodo_o, "nodo_a": nodo_a, "nodo_p": nodo_p, "cie_10": cie_10_final
+                    "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, "cie_10": cie_10_final
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
                 nombres_impresion = nombres if nombres else "Paciente No Registrado"
                 
-                # Ejecución del motor PDF con inyección del perfil activo
                 pdf_bytes = generar_receta_pdf(id_paciente, nombres_impresion, edad, fecha_actual, nodo_p, perfil_activo)
                 
                 st.success(f"Protocolo Exitoso: Registro consolidado. Documento firmado por {perfil_activo['nombre']}.")
@@ -234,7 +246,7 @@ with tab_consulta:
     
     col_busqueda, col_vacia = st.columns([1, 2])
     with col_busqueda:
-        busqueda_id = st.text_input("Ingrese la Cédula / ID del Paciente:").strip()
+        busqueda_id = st.text_input("Ingrese el Documento del Paciente:").strip()
         btn_buscar = st.button("Ejecutar Extracción de Datos", type="primary")
 
     if btn_buscar and busqueda_id:
@@ -242,7 +254,7 @@ with tab_consulta:
             res_paciente = supabase.table("pacientes").select("*").eq("id_paciente", busqueda_id).execute()
             
             if not res_paciente.data:
-                st.warning("El ID ingresado no posee registros en la base de datos central.")
+                st.warning("El Documento ingresado no posee registros en la base de datos central.")
             else:
                 paciente = res_paciente.data[0]
                 st.markdown("### Filiación y Perfil de Riesgo")
