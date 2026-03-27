@@ -105,16 +105,12 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.line(10, 35, 200, 35)
     pdf.ln(10)
     
-    # Fila 1: Fecha y Documento
+    # Fila 1: Fecha y Documento (Vector de renderizado optimizado)
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(30, 8, "Fecha:", border=0)
     pdf.set_font("Arial", '', 10)
     pdf.cell(50, 8, fecha, ln=False)
     
-    # ==========================================
-    # CORRECCIÓN DE COLISIÓN GEOMÉTRICA
-    # Vector X expandido de 20 a 32 milímetros
-    # ==========================================
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(32, 8, "ID/Documento:", border=0) 
     pdf.set_font("Arial", '', 10)
@@ -139,13 +135,14 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 8, plan_terapeutico)
     
-    # Zona de Firma (Dinámica según perfil)
+    # Zona de Firma Dinámica
     pdf.ln(30)
     pdf.line(60, pdf.get_y(), 150, pdf.get_y())
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
     
     return pdf.output(dest='S').encode('latin-1')
+
 # ==========================================
 # 5. TOPOLOGÍA DE NAVEGACIÓN REACTIVA
 # ==========================================
@@ -167,7 +164,6 @@ fv = st.session_state.form_version
 # ------------------------------------------
 with tab_ingreso:
     
-    # BANDEJA DE SALIDA PERSISTENTE (Muestra el último PDF generado tras el reinicio)
     if "pdf_reciente" in st.session_state:
         st.success(f"Protocolo Exitoso: Registro consolidado. Documento firmado por {st.session_state['medico_reciente']}.")
         st.download_button("📥 Descargar Receta Médica (PDF)", 
@@ -197,9 +193,6 @@ with tab_ingreso:
     with col_v4: peso_kg = st.number_input("Peso (kg):", format="%.2f", min_value=0.0, step=0.1, key=f"val_peso_{fv}")
     with col_v5: talla_m = st.number_input("Talla (m):", format="%.2f", min_value=0.0, step=0.01, key=f"val_talla_{fv}")
 
-    # ==========================================
-    # HUD VISUAL: RADAR BIOMÉTRICO (SE ACTIVA AL TECLEAR)
-    # ==========================================
     imc_texto_db = ""
     if talla_m > 0 and peso_kg > 0:
         imc_val = round(peso_kg / (talla_m ** 2), 2)
@@ -265,17 +258,12 @@ with tab_ingreso:
                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
                 nombres_impresion = nombres if nombres else "Paciente No Registrado"
                 
-                # Generación del archivo binario
                 pdf_bytes = generar_receta_pdf(id_paciente, nombres_impresion, edad, fecha_actual, nodo_p, perfil_activo)
                 
-                # Almacenamiento en el Inventario Persistente
                 st.session_state["pdf_reciente"] = pdf_bytes
                 st.session_state["nombre_pdf_reciente"] = f"Receta_{id_paciente}.pdf"
                 st.session_state["medico_reciente"] = perfil_activo['nombre']
                 
-                # ==========================================
-                # ROTACIÓN DIMENSIONAL (Caché Reset Absoluto)
-                # ==========================================
                 st.session_state.form_version += 1
                 st.rerun()
 
@@ -283,10 +271,10 @@ with tab_ingreso:
                 st.error(f"Falla transaccional: {e}")
 
 # ------------------------------------------
-# NODO B: LECTURA Y AUDITORÍA (QUERY)
+# NODO B: LECTURA Y AUDITORÍA (QUERY + ANALÍTICA)
 # ------------------------------------------
 with tab_consulta:
-    st.subheader("Motor de Búsqueda Clínica")
+    st.subheader("Motor de Búsqueda y Análisis Clínico")
     
     col_busqueda, col_vacia = st.columns([1, 2])
     with col_busqueda:
@@ -312,12 +300,34 @@ with tab_consulta:
                 
                 st.markdown("---")
                 
-                st.markdown("### Línea de Tiempo Clínica (Controles Previos)")
                 res_evol = supabase.table("evoluciones").select("*").eq("id_paciente", busqueda_id).order("fecha", desc=True).execute()
                 
                 if not res_evol.data:
                     st.info("No existen evoluciones clínicas documentadas para este paciente.")
                 else:
+                    # ==========================================
+                    # MOTOR DE VIGILANCIA EPIDEMIOLÓGICA (CURVA PONDERAL)
+                    # ==========================================
+                    df_evol = pd.DataFrame(res_evol.data)
+                    
+                    if not df_evol.empty and 'peso' in df_evol.columns:
+                        # Transformación de datos cronológicos
+                        df_evol['fecha_dt'] = pd.to_datetime(df_evol['fecha'])
+                        df_evol_sorted = df_evol.sort_values('fecha_dt')
+                        
+                        # Filtro estricto: Solo registros con peso válido
+                        df_peso = df_evol_sorted[df_evol_sorted['peso'] > 0][['fecha_dt', 'peso']]
+                        
+                        if not df_peso.empty and len(df_peso) > 1:
+                            st.markdown("### 📈 Monitor Epidemiológico: Fluctuación Ponderal")
+                            # Estandarización de formato para el eje X
+                            df_peso['Fecha'] = df_peso['fecha_dt'].dt.strftime('%d/%m/%Y')
+                            df_peso = df_peso.set_index('Fecha')
+                            
+                            st.line_chart(df_peso['peso'])
+                            st.markdown("---")
+
+                    st.markdown("### Línea de Tiempo Clínica (Controles Previos)")
                     for evol in res_evol.data:
                         raw_date = evol.get("fecha", "")
                         fmt_date = raw_date[:10] if raw_date else "Fecha desconocida"
@@ -328,8 +338,8 @@ with tab_consulta:
                             
                             peso_hist = evol.get('peso')
                             talla_hist = evol.get('talla')
-                            str_peso = f"{peso_hist} kg" if peso_hist is not None else "N/A"
-                            str_talla = f"{talla_hist} m" if talla_hist is not None else "N/A"
+                            str_peso = f"{peso_hist} kg" if peso_hist is not None and peso_hist > 0 else "N/A"
+                            str_talla = f"{talla_hist} m" if talla_hist is not None and talla_hist > 0 else "N/A"
                             
                             st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')} | Peso: {str_peso} | Talla: {str_talla}")
                             
