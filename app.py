@@ -11,14 +11,14 @@ import pandas as pd
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
 # ==========================================
-# 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD
+# 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD (MULTI-USUARIO)
 # ==========================================
 def verificar_autenticacion() -> bool:
     if st.session_state.get("autenticado", False):
         return True
 
     st.title("🔒 Portal de Acceso Restringido")
-    st.markdown("Sistema de Historia Clínica Electrónica - Acceso Exclusivo Médico")
+    st.markdown("Sistema de Historia Clínica Electrónica - Control de Acceso")
     
     with st.form("formulario_login"):
         usuario = st.text_input("Identificador de Usuario:").strip()
@@ -27,19 +27,28 @@ def verificar_autenticacion() -> bool:
 
         if submit:
             try:
-                usuario_valido = hmac.compare_digest(usuario, st.secrets["ADMIN_USER"])
-                pass_valida = hmac.compare_digest(contrasena, st.secrets["ADMIN_PASS"])
+                # 1. Extracción de la matriz de usuarios desde la bóveda
+                matriz_usuarios = st.secrets["credenciales"]
                 
-                if usuario_valido and pass_valida:
-                    st.session_state["autenticado"] = True
-                    st.rerun()
+                # 2. Validación de existencia del nodo (Usuario)
+                if usuario in matriz_usuarios:
+                    # 3. Verificación criptográfica de la carga útil (Contraseña)
+                    pass_valida = hmac.compare_digest(contrasena, matriz_usuarios[usuario])
+                    
+                    if pass_valida:
+                        st.session_state["autenticado"] = True
+                        # Almacenamos el ID del usuario en sesión para futuras auditorías
+                        st.session_state["usuario_activo"] = usuario 
+                        st.rerun()
+                    else:
+                        st.error("Brecha de Seguridad: Contraseña inválida. Acceso denegado.")
                 else:
-                    st.error("Brecha de Seguridad: Credenciales inválidas. Acceso denegado.")
+                    st.error("Brecha de Seguridad: Identificador de usuario no reconocido en la topología.")
+                    
             except KeyError:
-                st.error("Falla Crítica: Variables de entorno ADMIN_USER o ADMIN_PASS no definidas.")
+                st.error("Falla Crítica: El bloque [credenciales] no está definido en la arquitectura de secretos.")
                 
     return False
-
 # ------------------------------------------
 # BARRERA LÓGICA DE EJECUCIÓN
 # ------------------------------------------
