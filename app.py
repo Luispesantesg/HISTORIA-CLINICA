@@ -94,6 +94,8 @@ PERFILES_MEDICOS = {
 def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perfil_medico):
     pdf = FPDF()
     pdf.add_page()
+    
+    # Cabecera Documental
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
     pdf.set_font("Arial", 'B', 12)
@@ -102,34 +104,48 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.cell(0, 5, perfil_medico['subtitulo'], ln=True, align='C')
     pdf.line(10, 35, 200, 35)
     pdf.ln(10)
+    
+    # Fila 1: Fecha y Documento
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(30, 8, "Fecha:", border=0)
     pdf.set_font("Arial", '', 10)
     pdf.cell(50, 8, fecha, ln=False)
+    
+    # ==========================================
+    # CORRECCIÓN DE COLISIÓN GEOMÉTRICA
+    # Vector X expandido de 20 a 32 milímetros
+    # ==========================================
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(20, 8, "ID/Documento:", border=0)
+    pdf.cell(32, 8, "ID/Documento:", border=0) 
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 8, id_paciente, ln=True)
+    
+    # Fila 2: Paciente y Edad
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(30, 8, "Paciente:", border=0)
     pdf.set_font("Arial", '', 10)
     pdf.cell(100, 8, nombres, ln=False)
+    
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(15, 8, "Edad:", border=0)
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 8, str(edad), ln=True)
+    
+    # Línea separadora y Cuerpo Clínico
     pdf.line(10, 60, 200, 60)
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "Rp. / Indicaciones:", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 8, plan_terapeutico)
+    
+    # Zona de Firma (Dinámica según perfil)
     pdf.ln(30)
     pdf.line(60, pdf.get_y(), 150, pdf.get_y())
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
+    
     return pdf.output(dest='S').encode('latin-1')
-
 # ==========================================
 # 5. TOPOLOGÍA DE NAVEGACIÓN REACTIVA
 # ==========================================
