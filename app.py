@@ -140,23 +140,11 @@ tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 A
 lista_cie10 = cargar_catalogo_cie10_csv()
 
 # ------------------------------------------
-# PROTOCOLO DE PURGA VOLÁTIL (AUTO-LIMPIEZA)
-# ------------------------------------------
-if st.session_state.get("limpiar_campos", False):
-    claves_purga = ["val_id", "val_nombres", "val_sexo", "val_edad", "val_app", "val_apf", 
-                    "val_pa", "val_fc", "val_temp", "val_peso", "val_talla", 
-                    "val_motivo", "val_ea", "val_s", "val_o", "val_a", "val_p", "val_cie10"]
-    for clave in claves_purga:
-        if clave in st.session_state:
-            del st.session_state[clave]
-    st.session_state["limpiar_campos"] = False
-
-# ------------------------------------------
 # NODO A: ESCRITURA Y EMISIÓN (HUD EN TIEMPO REAL)
 # ------------------------------------------
 with tab_ingreso:
     
-    # BANDEJA DE SALIDA PERSISTENTE (Muestra el último PDF generado)
+    # BANDEJA DE SALIDA PERSISTENTE (Muestra el último PDF generado tras el reinicio)
     if "pdf_reciente" in st.session_state:
         st.success(f"Protocolo Exitoso: Registro consolidado. Documento firmado por {st.session_state['medico_reciente']}.")
         st.download_button("📥 Descargar Receta Médica (PDF)", 
@@ -230,40 +218,61 @@ with tab_ingreso:
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
 
     if submitted:
-        if not id_paciente or not nodo_p:
+        if not st.session_state.val_id or not st.session_state.val_p:
             st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento (P) son mandatorios.")
         else:
             try:
-                cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
-                nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
+                cie_10_final = st.session_state.val_cie10 if st.session_state.val_cie10 else "No especificado"
+                nodo_o_final = f"{imc_texto_db}\n{st.session_state.val_o}" if imc_texto_db else st.session_state.val_o
 
                 paciente_data = {
-                    "id_paciente": id_paciente, "nombres": nombres, "edad": edad, "sexo": sexo,
-                    "antecedentes_personales": antecedentes_personales, "antecedentes_familiares": antecedentes_familiares
+                    "id_paciente": st.session_state.val_id, "nombres": st.session_state.val_nombres, "edad": st.session_state.val_edad, "sexo": st.session_state.val_sexo,
+                    "antecedentes_personales": st.session_state.val_app, "antecedentes_familiares": st.session_state.val_apf
                 }
                 supabase.table("pacientes").upsert(paciente_data).execute()
 
                 evolucion_data = {
-                    "id_paciente": id_paciente, "motivo_consulta": motivo_consulta, "enfermedad_actual": enfermedad_actual,
-                    "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
-                    "peso": peso_kg, "talla": talla_m,
-                    "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, "cie_10": cie_10_final
+                    "id_paciente": st.session_state.val_id, "motivo_consulta": st.session_state.val_motivo, "enfermedad_actual": st.session_state.val_ea,
+                    "presion_arterial": st.session_state.val_pa, "frecuencia_cardiaca": st.session_state.val_fc, "temperatura": st.session_state.val_temp,
+                    "peso": st.session_state.val_peso, "talla": st.session_state.val_talla,
+                    "nodo_s": st.session_state.val_s, "nodo_o": nodo_o_final, "nodo_a": st.session_state.val_a, "nodo_p": st.session_state.val_p, "cie_10": cie_10_final
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
-                nombres_impresion = nombres if nombres else "Paciente No Registrado"
+                nombres_impresion = st.session_state.val_nombres if st.session_state.val_nombres else "Paciente No Registrado"
                 
                 # Generación del archivo binario
-                pdf_bytes = generar_receta_pdf(id_paciente, nombres_impresion, edad, fecha_actual, nodo_p, perfil_activo)
+                pdf_bytes = generar_receta_pdf(st.session_state.val_id, nombres_impresion, st.session_state.val_edad, fecha_actual, st.session_state.val_p, perfil_activo)
                 
                 # Almacenamiento en el Inventario Persistente
                 st.session_state["pdf_reciente"] = pdf_bytes
-                st.session_state["nombre_pdf_reciente"] = f"Receta_{id_paciente}.pdf"
+                st.session_state["nombre_pdf_reciente"] = f"Receta_{st.session_state.val_id}.pdf"
                 st.session_state["medico_reciente"] = perfil_activo['nombre']
                 
-                # Activación de la purga y recarga táctica
-                st.session_state["limpiar_campos"] = True
+                # ==========================================
+                # HARD RESET: Sobreescritura absoluta de memoria RAM
+                # ==========================================
+                st.session_state.val_id = ""
+                st.session_state.val_nombres = ""
+                st.session_state.val_sexo = "Masculino"
+                st.session_state.val_edad = 0
+                st.session_state.val_app = ""
+                st.session_state.val_apf = ""
+                st.session_state.val_pa = ""
+                st.session_state.val_fc = 0
+                st.session_state.val_temp = 0.0
+                st.session_state.val_peso = 0.0
+                st.session_state.val_talla = 0.0
+                st.session_state.val_motivo = ""
+                st.session_state.val_ea = ""
+                st.session_state.val_s = ""
+                st.session_state.val_o = ""
+                st.session_state.val_a = ""
+                st.session_state.val_p = ""
+                st.session_state.val_cie10 = None
+
+                # Reinicio del motor gráfico
                 st.rerun()
 
             except Exception as e:
