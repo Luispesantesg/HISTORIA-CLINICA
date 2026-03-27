@@ -10,6 +10,10 @@ import pandas as pd
 # ==========================================
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
+# Inicialización de la Semilla Dimensional para Auto-Limpieza
+if "form_version" not in st.session_state:
+    st.session_state.form_version = 0
+
 # ==========================================
 # 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD
 # ==========================================
@@ -139,6 +143,9 @@ st.markdown("---")
 tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 Auditoría Longitudinal del Paciente"])
 lista_cie10 = cargar_catalogo_cie10_csv()
 
+# Extracción de la Semilla de Versión
+fv = st.session_state.form_version
+
 # ------------------------------------------
 # NODO A: ESCRITURA Y EMISIÓN (HUD EN TIEMPO REAL)
 # ------------------------------------------
@@ -157,22 +164,22 @@ with tab_ingreso:
     st.subheader("1. Filiación y Antecedentes")
     col_fil_1, col_fil_2 = st.columns(2)
     with col_fil_1:
-        id_paciente = st.text_input("Documento de Identidad (Obligatorio):", key="val_id").strip()
-        nombres = st.text_input("Apellidos y Nombres:", key="val_nombres").strip()
-        sexo = st.selectbox("Sexo Biológico:", ["Masculino", "Femenino"], key="val_sexo")
-        edad = st.number_input("Edad (Años):", min_value=0, max_value=120, step=1, key="val_edad")
+        id_paciente = st.text_input("Documento de Identidad (Obligatorio):", key=f"val_id_{fv}").strip()
+        nombres = st.text_input("Apellidos y Nombres:", key=f"val_nombres_{fv}").strip()
+        sexo = st.selectbox("Sexo Biológico:", ["Masculino", "Femenino"], key=f"val_sexo_{fv}")
+        edad = st.number_input("Edad (Años):", min_value=0, max_value=120, step=1, key=f"val_edad_{fv}")
     with col_fil_2:
-        antecedentes_personales = st.text_area("APP:", height=80, key="val_app").strip()
-        antecedentes_familiares = st.text_area("APF:", height=80, key="val_apf").strip()
+        antecedentes_personales = st.text_area("APP:", height=80, key=f"val_app_{fv}").strip()
+        antecedentes_familiares = st.text_area("APF:", height=80, key=f"val_apf_{fv}").strip()
 
     st.markdown("---")
     st.subheader("2. Signos Vitales y Antropometría")
     col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns(5)
-    with col_v1: pa = st.text_input("PA (mmHg):", placeholder="120/80", key="val_pa").strip()
-    with col_v2: fc = st.number_input("FC (lpm):", min_value=0, step=1, key="val_fc")
-    with col_v3: temp = st.number_input("Temp (°C):", format="%.1f", step=0.1, key="val_temp")
-    with col_v4: peso_kg = st.number_input("Peso (kg):", format="%.2f", min_value=0.0, step=0.1, key="val_peso")
-    with col_v5: talla_m = st.number_input("Talla (m):", format="%.2f", min_value=0.0, step=0.01, key="val_talla")
+    with col_v1: pa = st.text_input("PA (mmHg):", placeholder="120/80", key=f"val_pa_{fv}").strip()
+    with col_v2: fc = st.number_input("FC (lpm):", min_value=0, step=1, key=f"val_fc_{fv}")
+    with col_v3: temp = st.number_input("Temp (°C):", format="%.1f", step=0.1, key=f"val_temp_{fv}")
+    with col_v4: peso_kg = st.number_input("Peso (kg):", format="%.2f", min_value=0.0, step=0.1, key=f"val_peso_{fv}")
+    with col_v5: talla_m = st.number_input("Talla (m):", format="%.2f", min_value=0.0, step=0.01, key=f"val_talla_{fv}")
 
     # ==========================================
     # HUD VISUAL: RADAR BIOMÉTRICO (SE ACTIVA AL TECLEAR)
@@ -196,83 +203,64 @@ with tab_ingreso:
             imc_texto_db = f"[Antropometría] IMC: {imc_val} ({estrato})"
 
     st.markdown("---")
-    motivo_consulta = st.text_input("Motivo de Consulta:", key="val_motivo").strip()
-    enfermedad_actual = st.text_area("Enfermedad Actual:", height=100, key="val_ea").strip()
+    motivo_consulta = st.text_input("Motivo de Consulta:", key=f"val_motivo_{fv}").strip()
+    enfermedad_actual = st.text_area("Enfermedad Actual:", height=100, key=f"val_ea_{fv}").strip()
     
     col_clin_1, col_clin_2 = st.columns(2)
     with col_clin_1:
-        nodo_s = st.text_area("Subjetivo (S):", height=120, key="val_s").strip()
-        nodo_o = st.text_area("Objetivo (O):", height=120, key="val_o").strip()
+        nodo_s = st.text_area("Subjetivo (S):", height=120, key=f"val_s_{fv}").strip()
+        nodo_o = st.text_area("Objetivo (O):", height=120, key=f"val_o_{fv}").strip()
     with col_clin_2:
-        nodo_a = st.text_area("Apreciación (A):", height=120, key="val_a").strip()
-        nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120, key="val_p").strip()
+        nodo_a = st.text_area("Apreciación (A):", height=120, key=f"val_a_{fv}").strip()
+        nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120, key=f"val_p_{fv}").strip()
         
     cie_10_seleccion = st.selectbox(
         "Diagnóstico CIE-10 Principal (Normativa Técnica):", 
         options=lista_cie10, 
         index=None,
         placeholder="Haga clic aquí y escriba el código o patología para filtrar...",
-        key="val_cie10"
+        key=f"val_cie10_{fv}"
     )
 
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
 
     if submitted:
-        if not st.session_state.val_id or not st.session_state.val_p:
+        if not id_paciente or not nodo_p:
             st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento (P) son mandatorios.")
         else:
             try:
-                cie_10_final = st.session_state.val_cie10 if st.session_state.val_cie10 else "No especificado"
-                nodo_o_final = f"{imc_texto_db}\n{st.session_state.val_o}" if imc_texto_db else st.session_state.val_o
+                cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
+                nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
 
                 paciente_data = {
-                    "id_paciente": st.session_state.val_id, "nombres": st.session_state.val_nombres, "edad": st.session_state.val_edad, "sexo": st.session_state.val_sexo,
-                    "antecedentes_personales": st.session_state.val_app, "antecedentes_familiares": st.session_state.val_apf
+                    "id_paciente": id_paciente, "nombres": nombres, "edad": edad, "sexo": sexo,
+                    "antecedentes_personales": antecedentes_personales, "antecedentes_familiares": antecedentes_familiares
                 }
                 supabase.table("pacientes").upsert(paciente_data).execute()
 
                 evolucion_data = {
-                    "id_paciente": st.session_state.val_id, "motivo_consulta": st.session_state.val_motivo, "enfermedad_actual": st.session_state.val_ea,
-                    "presion_arterial": st.session_state.val_pa, "frecuencia_cardiaca": st.session_state.val_fc, "temperatura": st.session_state.val_temp,
-                    "peso": st.session_state.val_peso, "talla": st.session_state.val_talla,
-                    "nodo_s": st.session_state.val_s, "nodo_o": nodo_o_final, "nodo_a": st.session_state.val_a, "nodo_p": st.session_state.val_p, "cie_10": cie_10_final
+                    "id_paciente": id_paciente, "motivo_consulta": motivo_consulta, "enfermedad_actual": enfermedad_actual,
+                    "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
+                    "peso": peso_kg, "talla": talla_m,
+                    "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, "cie_10": cie_10_final
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
-                nombres_impresion = st.session_state.val_nombres if st.session_state.val_nombres else "Paciente No Registrado"
+                nombres_impresion = nombres if nombres else "Paciente No Registrado"
                 
                 # Generación del archivo binario
-                pdf_bytes = generar_receta_pdf(st.session_state.val_id, nombres_impresion, st.session_state.val_edad, fecha_actual, st.session_state.val_p, perfil_activo)
+                pdf_bytes = generar_receta_pdf(id_paciente, nombres_impresion, edad, fecha_actual, nodo_p, perfil_activo)
                 
                 # Almacenamiento en el Inventario Persistente
                 st.session_state["pdf_reciente"] = pdf_bytes
-                st.session_state["nombre_pdf_reciente"] = f"Receta_{st.session_state.val_id}.pdf"
+                st.session_state["nombre_pdf_reciente"] = f"Receta_{id_paciente}.pdf"
                 st.session_state["medico_reciente"] = perfil_activo['nombre']
                 
                 # ==========================================
-                # HARD RESET: Sobreescritura absoluta de memoria RAM
+                # ROTACIÓN DIMENSIONAL (Caché Reset Absoluto)
                 # ==========================================
-                st.session_state.val_id = ""
-                st.session_state.val_nombres = ""
-                st.session_state.val_sexo = "Masculino"
-                st.session_state.val_edad = 0
-                st.session_state.val_app = ""
-                st.session_state.val_apf = ""
-                st.session_state.val_pa = ""
-                st.session_state.val_fc = 0
-                st.session_state.val_temp = 0.0
-                st.session_state.val_peso = 0.0
-                st.session_state.val_talla = 0.0
-                st.session_state.val_motivo = ""
-                st.session_state.val_ea = ""
-                st.session_state.val_s = ""
-                st.session_state.val_o = ""
-                st.session_state.val_a = ""
-                st.session_state.val_p = ""
-                st.session_state.val_cie10 = None
-
-                # Reinicio del motor gráfico
+                st.session_state.form_version += 1
                 st.rerun()
 
             except Exception as e:
