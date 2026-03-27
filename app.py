@@ -203,7 +203,6 @@ with tab_ingreso:
         placeholder="Haga clic aquí y escriba el código o patología para filtrar..."
     )
 
-    # Botón maestro fuera del formulario
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
 
     if submitted:
@@ -212,8 +211,6 @@ with tab_ingreso:
         else:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
-
-                # Fusión automática de telemetría biométrica
                 nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
 
                 paciente_data = {
@@ -222,9 +219,11 @@ with tab_ingreso:
                 }
                 supabase.table("pacientes").upsert(paciente_data).execute()
 
+                # Inyección de las variables permanentes de Peso y Talla en Supabase
                 evolucion_data = {
                     "id_paciente": id_paciente, "motivo_consulta": motivo_consulta, "enfermedad_actual": enfermedad_actual,
                     "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
+                    "peso": peso_kg, "talla": talla_m,
                     "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, "cie_10": cie_10_final
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
@@ -283,7 +282,14 @@ with tab_consulta:
                         with st.expander(f"🗓️ Control: {fmt_date} | Motivo: {evol.get('motivo_consulta', 'No especificado')} | CIE-10: {evol.get('cie_10', 'N/A')}"):
                             st.write(f"**Enfermedad Actual:** {evol.get('enfermedad_actual', 'N/A')}")
                             st.markdown("**Triaje Vital:**")
-                            st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')}")
+                            
+                            # Auditoría de retrocompatibilidad (evita fallos en registros viejos sin peso/talla)
+                            peso_hist = evol.get('peso')
+                            talla_hist = evol.get('talla')
+                            str_peso = f"{peso_hist} kg" if peso_hist is not None else "N/A"
+                            str_talla = f"{talla_hist} m" if talla_hist is not None else "N/A"
+                            
+                            st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')} | Peso: {str_peso} | Talla: {str_talla}")
                             
                             st.markdown("**Matriz SOAP:**")
                             st.write(f"**S:** {evol.get('nodo_s', '')}")
