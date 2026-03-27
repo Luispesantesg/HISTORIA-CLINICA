@@ -127,7 +127,7 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 5. TOPOLOGÍA DE NAVEGACIÓN (PESTAÑAS)
+# 5. TOPOLOGÍA DE NAVEGACIÓN REACTIVA
 # ==========================================
 st.title("⚕️ Sistema Integrado de Historia Clínica")
 
@@ -140,10 +140,10 @@ tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 A
 lista_cie10 = cargar_catalogo_cie10_csv()
 
 # ------------------------------------------
-# NODO A: ESCRITURA Y EMISIÓN
+# NODO A: ESCRITURA Y EMISIÓN (CONTENEDOR REACTIVO)
 # ------------------------------------------
 with tab_ingreso:
-    with st.form("formulario_hce_general", clear_on_submit=True):
+    with st.container():
         st.subheader("1. Filiación y Antecedentes")
         col_fil_1, col_fil_2 = st.columns(2)
         with col_fil_1:
@@ -164,6 +164,32 @@ with tab_ingreso:
         with col_v4: peso_kg = st.number_input("Peso (kg):", format="%.2f", min_value=0.0, step=0.1)
         with col_v5: talla_m = st.number_input("Talla (m):", format="%.2f", min_value=0.0, step=0.01)
 
+        # ==========================================
+        # HUD VISUAL: RADAR BIOMÉTRICO EN TIEMPO REAL
+        # ==========================================
+        imc_texto_db = "" 
+        if talla_m > 0 and peso_kg > 0:
+            imc_val = round(peso_kg / (talla_m ** 2), 2)
+            
+            if edad < 19:
+                # Alerta visible en pantalla (Pediátrico)
+                st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada. Requiere validación manual en curvas de crecimiento OMS según edad y sexo.")
+                # Variable invisible que viaja a la Base de Datos
+                imc_texto_db = f"[Antropometría] IMC: {imc_val} - Riesgo Metabólico: Paciente pediátrico (Validar en curvas OMS)"
+            else:
+                if imc_val < 18.5: estrato, color = "Bajo peso", "🔵"
+                elif imc_val < 24.9: estrato, color = "Normopeso", "🟢"
+                elif imc_val < 29.9: estrato, color = "Sobrepeso", "🟡"
+                elif imc_val < 34.9: estrato, color = "Obesidad I", "🟠"
+                elif imc_val < 39.9: estrato, color = "Obesidad II", "🔴"
+                else: estrato, color = "Obesidad III", "🟣"
+                
+                # Proyección visible en pantalla (Adulto)
+                st.info(f"{color} **Radar Antropométrico:** IMC de **{imc_val}** - Estratificación OMS: **{estrato}**")
+                # Variable invisible que viaja a la Base de Datos
+                imc_texto_db = f"[Antropometría] IMC: {imc_val} ({estrato})"
+        
+        st.markdown("---")
         motivo_consulta = st.text_input("Motivo de Consulta:").strip()
         enfermedad_actual = st.text_area("Enfermedad Actual:", height=100).strip()
         
@@ -182,7 +208,8 @@ with tab_ingreso:
             placeholder="Haga clic aquí y escriba el código o patología para filtrar..."
         )
 
-        submitted = st.form_submit_button("Guardar Historia y Procesar Receta", type="primary")
+        # Botón extraído fuera de la cuarentena
+        submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
 
     if submitted:
         if not id_paciente or not nodo_p:
@@ -191,28 +218,8 @@ with tab_ingreso:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
 
-                # ==========================================
-                # MOTOR DE CÁLCULO ANTROPOMÉTRICO CONDICIONAL
-                # ==========================================
-                imc_texto = ""
-                if talla_m > 0 and peso_kg > 0:
-                    imc_val = round(peso_kg / (talla_m ** 2), 2)
-                    
-                    if edad < 19:
-                        # Ruta Pediátrica: Requiere percentiles OMS
-                        imc_texto = f"[Antropometría] IMC: {imc_val} - Riesgo Metabólico: Paciente pediátrico (Validar en curvas OMS)"
-                    else:
-                        # Ruta Adulto: Estratificación estandarizada
-                        if imc_val < 18.5: estrato = "Bajo peso"
-                        elif imc_val < 24.9: estrato = "Normopeso"
-                        elif imc_val < 29.9: estrato = "Sobrepeso"
-                        elif imc_val < 34.9: estrato = "Obesidad I"
-                        elif imc_val < 39.9: estrato = "Obesidad II"
-                        else: estrato = "Obesidad III"
-                        imc_texto = f"[Antropometría] IMC: {imc_val} ({estrato})"
-
                 # Inyección del cálculo biométrico en el nodo Objetivo
-                nodo_o_final = f"{imc_texto}\n{nodo_o}" if imc_texto else nodo_o
+                nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
 
                 paciente_data = {
                     "id_paciente": id_paciente, "nombres": nombres, "edad": edad, "sexo": sexo,
@@ -278,16 +285,4 @@ with tab_consulta:
                         raw_date = evol.get("fecha", "")
                         fmt_date = raw_date[:10] if raw_date else "Fecha desconocida"
                         
-                        with st.expander(f"🗓️ Control: {fmt_date} | Motivo: {evol.get('motivo_consulta', 'No especificado')} | CIE-10: {evol.get('cie_10', 'N/A')}"):
-                            st.write(f"**Enfermedad Actual:** {evol.get('enfermedad_actual', 'N/A')}")
-                            st.markdown("**Triaje Vital:**")
-                            st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')}")
-                            
-                            st.markdown("**Matriz SOAP:**")
-                            st.write(f"**S:** {evol.get('nodo_s', '')}")
-                            st.write(f"**O:** {evol.get('nodo_o', '')}")
-                            st.write(f"**A:** {evol.get('nodo_a', '')}")
-                            st.write(f"**P:** {evol.get('nodo_p', '')}")
-                            
-        except Exception as e:
-            st.error(f"Falla en la recuperación de telemetría: {e}")
+                        with st.expander(f"🗓️ Control: {fmt_date} | Motivo: {evol.get('motivo_consulta', 'No especificado')} | CIE-10: {evol.get('cie_10
