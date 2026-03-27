@@ -27,28 +27,25 @@ def verificar_autenticacion() -> bool:
 
         if submit:
             try:
-                # 1. Extracción de la matriz de usuarios desde la bóveda
+                # Extracción de la matriz de credenciales desde la bóveda de Streamlit
                 matriz_usuarios = st.secrets["credenciales"]
                 
-                # 2. Validación de existencia del nodo (Usuario)
                 if usuario in matriz_usuarios:
-                    # 3. Verificación criptográfica de la carga útil (Contraseña)
                     pass_valida = hmac.compare_digest(contrasena, matriz_usuarios[usuario])
                     
                     if pass_valida:
                         st.session_state["autenticado"] = True
-                        # Almacenamos el ID del usuario en sesión para futuras auditorías
-                        st.session_state["usuario_activo"] = usuario 
+                        st.session_state["usuario_activo"] = usuario # Registro de trazabilidad
                         st.rerun()
                     else:
                         st.error("Brecha de Seguridad: Contraseña inválida. Acceso denegado.")
                 else:
-                    st.error("Brecha de Seguridad: Identificador de usuario no reconocido en la topología.")
-                    
+                    st.error("Brecha de Seguridad: Identificador de usuario no reconocido.")
             except KeyError:
-                st.error("Falla Crítica: El bloque [credenciales] no está definido en la arquitectura de secretos.")
+                st.error("Falla Crítica: El bloque [credenciales] no está definido en secrets.toml.")
                 
     return False
+
 # ------------------------------------------
 # BARRERA LÓGICA DE EJECUCIÓN
 # ------------------------------------------
@@ -56,7 +53,7 @@ if not verificar_autenticacion():
     st.stop()
 
 # ==========================================
-# 3. MOTORES DE DATOS Y RENDERIZADO
+# 3. MOTORES DE DATOS Y CATÁLOGOS ESTÁTICOS
 # ==========================================
 @st.cache_resource
 def init_connection() -> Client:
@@ -72,9 +69,6 @@ except Exception as e:
 
 @st.cache_data
 def cargar_catalogo_cie10_csv() -> list:
-    """
-    Carga el catálogo CIE-10 desde el disco virtual hacia la memoria RAM.
-    """
     try:
         df = pd.read_csv("cie10_completo.csv", dtype=str)
         df['CODIGO'] = df['CODIGO'].fillna("").str.strip()
@@ -84,15 +78,34 @@ def cargar_catalogo_cie10_csv() -> list:
     except FileNotFoundError:
         return ["Error - Archivo 'cie10_completo.csv' no detectado en el servidor."]
 
-def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico):
+# ==========================================
+# 4. MATRIZ DE PERFILES Y EXPORTACIÓN PDF
+# ==========================================
+PERFILES_MEDICOS = {
+    "luis_pesantes": {
+        "nombre": "Dr. Luis M. Pesantes",
+        "especialidad": "Médico General",
+        "subtitulo": "Magíster en Salud Ocupacional"
+    },
+    "cinthia_garcia": {
+        "nombre": "Dra. Cinthia Anabel García Dávila",
+        "especialidad": "Médico General", 
+        "subtitulo": "Atención Médica Integral" 
+    }
+}
+
+def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perfil_medico):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
+    
+    # Inyección de metadatos del perfil activo
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, "Dr. Luis Pesantes - Medico General", ln=True, align='C')
+    pdf.cell(0, 8, f"{perfil_medico['nombre']} - {perfil_medico['especialidad']}", ln=True, align='C')
     pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 5, "Magister en Salud Ocupacional", ln=True, align='C')
+    pdf.cell(0, 5, perfil_medico['subtitulo'], ln=True, align='C')
+    
     pdf.line(10, 35, 200, 35)
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 10)
@@ -120,18 +133,22 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico):
     pdf.ln(30)
     pdf.line(60, pdf.get_y(), 150, pdf.get_y())
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 8, "Firma y Sello del Medico", ln=True, align='C')
+    pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 4. TOPOLOGÍA DE NAVEGACIÓN (PESTAÑAS)
+# 5. TOPOLOGÍA DE NAVEGACIÓN (PESTAÑAS)
 # ==========================================
 st.title("⚕️ Sistema Integrado de Historia Clínica")
+
+# Identificación visual de la sesión activa
+usuario_actual = st.session_state.get("usuario_activo", "luis_pesantes")
+perfil_activo = PERFILES_MEDICOS.get(usuario_actual, PERFILES_MEDICOS["luis_pesantes"])
+st.caption(f"Sesión activa: {perfil_activo['nombre']}")
 st.markdown("---")
 
 tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 Auditoría Longitudinal del Paciente"])
 
-# Pre-carga de la matriz CIE-10 para la interfaz
 lista_cie10 = cargar_catalogo_cie10_csv()
 
 # ------------------------------------------
@@ -168,7 +185,6 @@ with tab_ingreso:
             nodo_a = st.text_area("Apreciación (A):", height=120).strip()
             nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120).strip()
             
-        # Motor de búsqueda offline integrado en el formulario
         cie_10_seleccion = st.selectbox(
             "Diagnóstico CIE-10 Principal (Normativa Técnica):", 
             options=lista_cie10, 
@@ -183,7 +199,6 @@ with tab_ingreso:
             st.error("Error Lógico: La Cédula y el Plan de Tratamiento (P) son mandatorios.")
         else:
             try:
-                # Saneamiento de variables nulas
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
 
                 paciente_data = {
@@ -201,9 +216,11 @@ with tab_ingreso:
                 
                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
                 nombres_impresion = nombres if nombres else "Paciente No Registrado"
-                pdf_bytes = generar_receta_pdf(id_paciente, nombres_impresion, edad, fecha_actual, nodo_p)
                 
-                st.success(f"Protocolo Exitoso: Registro consolidado. CIE-10 indexado: {cie_10_final}")
+                # Ejecución del motor PDF con inyección del perfil activo
+                pdf_bytes = generar_receta_pdf(id_paciente, nombres_impresion, edad, fecha_actual, nodo_p, perfil_activo)
+                
+                st.success(f"Protocolo Exitoso: Registro consolidado. Documento firmado por {perfil_activo['nombre']}.")
                 st.download_button("📥 Descargar Receta Médica (PDF)", data=pdf_bytes, file_name=f"Receta_{id_paciente}.pdf", mime="application/pdf")
 
             except Exception as e:
