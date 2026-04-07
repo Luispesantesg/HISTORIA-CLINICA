@@ -320,6 +320,8 @@ with tab_ingreso:
 
         # Matriz de Datos Interactiva (st.data_editor)
         st.markdown("**Matriz Analítica de Biomarcadores (Editable):**")
+        st.caption("ℹ️ Agregue las filas necesarias para registrar valores críticos o alterados. Esta tabla será indexada estructuralmente en Supabase.")
+        
         df_esquema_inicial = pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
         
         df_lab_interactivo = st.data_editor(
@@ -327,8 +329,7 @@ with tab_ingreso:
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
-            key=f"editor_json_lab_{fv}",
-            help="Agregue las filas necesarias para registrar valores críticos o alterados. Esta tabla será indexada estructuralmente."
+            key=f"editor_json_lab_{fv}"
         )
 
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
