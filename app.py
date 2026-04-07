@@ -8,7 +8,10 @@ import fitz  # PyMuPDF
 import tempfile
 import os
 import json
-import google.generativeai as genai
+
+# Nuevas librerías del SDK actualizado de Google
+from google import genai
+from google.genai import types
 
 # ==========================================
 # 1. CONFIGURACIÓN DEL ENTORNO E INFERENCIA
@@ -18,8 +21,10 @@ st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layo
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
+# Inicialización del nuevo Cliente NLP
+gemini_client = None
 try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 except KeyError:
     st.warning("Alerta de Configuración: GEMINI_API_KEY no detectada en secrets.toml. El módulo NLP estará inactivo.")
 
@@ -140,9 +145,13 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # ==========================================
-# 5. PUENTE DE INFERENCIA CLÍNICA (NLP)
+# 5. PUENTE DE INFERENCIA CLÍNICA (NUEVO SDK)
 # ==========================================
 def estructurar_telemetria_laboratorio(texto_crudo: str) -> pd.DataFrame:
+    if gemini_client is None:
+        st.error("El motor NLP se encuentra inactivo. Verifique sus credenciales.")
+        return pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
+        
     prompt_ingenieria = f"""
     Actúa como un algoritmo experto en extracción de datos de laboratorio clínico.
     Analiza el texto médico proporcionado y extrae únicamente los parámetros evaluados.
@@ -156,10 +165,13 @@ def estructurar_telemetria_laboratorio(texto_crudo: str) -> pd.DataFrame:
     {texto_crudo}
     """
     try:
-        modelo = genai.GenerativeModel('gemini-1.5-flash')
-        respuesta = modelo.generate_content(
-            prompt_ingenieria,
-            generation_config=genai.GenerationConfig(response_mime_type="application/json")
+        # Llamada estructurada bajo la nueva API de google.genai
+        respuesta = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt_ingenieria,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json"
+            )
         )
         matriz_diccionarios = json.loads(respuesta.text)
         return pd.DataFrame(matriz_diccionarios)
