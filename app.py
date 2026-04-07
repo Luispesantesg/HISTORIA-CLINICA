@@ -5,6 +5,7 @@ from fpdf import FPDF
 from datetime import datetime
 import pandas as pd
 import pdfplumber
+import io  # Librería nativa para manejo de buffers de memoria
 
 # ==========================================
 # 1. CONFIGURACIÓN DEL ENTORNO
@@ -282,21 +283,25 @@ with tab_ingreso:
         if archivo_lab is not None:
             with st.spinner("Ejecutando motor de extracción de datos..."):
                 try:
-                    # Corrección Crítica: Puntero de memoria a offset 0
+                    # 1. Resetear el puntero de memoria
                     archivo_lab.seek(0)
                     
-                    with pdfplumber.open(archivo_lab) as pdf:
+                    # 2. Forzar conversión a Buffer Nativo Puro (Bypass de Streamlit)
+                    buffer_nativo = io.BytesIO(archivo_lab.read())
+                    
+                    # 3. Lectura con tolerancia a errores de layout
+                    with pdfplumber.open(buffer_nativo) as pdf:
                         paginas = []
                         for pagina in pdf.pages:
-                            texto = pagina.extract_text()
+                            texto = pagina.extract_text(layout=True) 
                             if texto:
                                 paginas.append(texto)
                         
                         texto_extraido_lab = "\n".join(paginas)
                     
-                    # Heurística de detección de imágenes rasterizadas
+                    # 4. Auditoría de Extracción
                     if not texto_extraido_lab.strip():
-                        st.warning("⚠️ **Diagnóstico de Ingesta:** Archivo procesado. No se detectaron caracteres. Probablemente sea una imagen escaneada (rasterizada) sin capa de texto estructurado.")
+                        st.warning("⚠️ **Bloqueo Detectado:** El documento es vectorial, pero el motor devolvió una matriz vacía. Esto indica que el laboratorio aplicó un cifrado DRM contra extracción de datos o utiliza fuentes CID no estandarizadas.")
                     else:
                         st.toast("Extracción de telemetría de laboratorio exitosa.", icon="✅")
                         
