@@ -5,3 +5,4 @@ fpdf
 pandas
 PyMuPDF
 google-genai
+tenacity
