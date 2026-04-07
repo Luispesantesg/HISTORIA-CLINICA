@@ -259,7 +259,7 @@ with tab_consulta:
     col_busqueda, col_vacia = st.columns([1, 2])
     with col_busqueda:
         busqueda_id = st.text_input("Ingrese el Documento del Paciente:").strip()
-        btn_buscar = st.button("Ejecutar Extracción de Datos", type="primary")
+        btn_buscar = st.button("Ejecutar Extracción de Datos", type="primary", width='stretch')
 
     if btn_buscar and busqueda_id:
         try:
@@ -280,6 +280,10 @@ with tab_consulta:
                 
                 st.markdown("---")
                 
+                # ==========================================
+                # AUDITORÍA 1: MEDICINA GENERAL
+                # ==========================================
+                st.markdown("### 🏥 Historial Clínico Integral")
                 res_evol = supabase.table("evoluciones").select("*").eq("id_paciente", busqueda_id).order("fecha", desc=True).execute()
                 
                 if not res_evol.data:
@@ -287,14 +291,14 @@ with tab_consulta:
                 else:
                     df_evol = pd.DataFrame(res_evol.data)
                     
+                    # Motor de Fluctuación Ponderal
                     if not df_evol.empty and 'peso' in df_evol.columns:
                         df_evol['fecha_dt'] = pd.to_datetime(df_evol['fecha'])
                         df_evol_sorted = df_evol.sort_values('fecha_dt')
-                        
                         df_peso = df_evol_sorted[df_evol_sorted['peso'] > 0][['fecha_dt', 'peso']]
                         
                         if not df_peso.empty and len(df_peso) > 1:
-                            st.markdown("### 📈 Monitor Epidemiológico: Fluctuación Ponderal")
+                            st.markdown("#### 📈 Monitor Epidemiológico: Fluctuación Ponderal")
                             df_peso['Fecha'] = df_peso['fecha_dt'].dt.strftime('%d/%m/%Y')
                             df_peso = df_peso.set_index('Fecha')
                             
@@ -309,7 +313,7 @@ with tab_consulta:
                                 st.line_chart(df_peso['peso'])
                             st.markdown("---")
 
-                    st.markdown("### Línea de Tiempo Clínica (Controles Previos)")
+                    st.markdown("#### Línea de Tiempo Clínica (Controles Previos)")
                     for evol in res_evol.data:
                         raw_date = evol.get("fecha", "")
                         fmt_date = raw_date[:10] if raw_date else "Fecha desconocida"
@@ -339,11 +343,45 @@ with tab_consulta:
                                     st.dataframe(pd.DataFrame(lab_historico), width='stretch', hide_index=True)
                                 else:
                                     st.info(lab_historico)
-                            
-        except Exception as e:
-            st.error(f"Falla en la recuperación de telemetría: {e}")
 
-# ------------------------------------------
+                st.markdown("---")
+                
+                # ==========================================
+                # AUDITORÍA 2: SALUD OCUPACIONAL
+                # ==========================================
+                st.markdown("### ⚙️ Historial de Salud Ocupacional")
+                res_oc = supabase.table("evaluaciones_ocupacionales").select("*").eq("id_paciente", busqueda_id).order("fecha", desc=True).execute()
+                
+                if not res_oc.data:
+                    st.info("No existen evaluaciones de aptitud documentadas para este empleado.")
+                else:
+                    st.markdown("#### Línea de Tiempo de Aptitud Laboral")
+                    for eval_oc in res_oc.data:
+                        raw_date_oc = eval_oc.get("fecha", "")
+                        fmt_date_oc = raw_date_oc[:10] if raw_date_oc else "Fecha desconocida"
+                        dictamen_str = eval_oc.get('dictamen', 'N/A')
+                        cargo_str = eval_oc.get('cargo', 'N/A')
+                        
+                        with st.expander(f"👷 Evaluación: {fmt_date_oc} | Cargo: {cargo_str} | Dictamen: {dictamen_str}"):
+                            st.markdown("**Matriz de Exposición a Riesgos:**")
+                            col_r1, col_r2 = st.columns(2)
+                            with col_r1:
+                                f_list = eval_oc.get('riesgos_fisicos', [])
+                                e_list = eval_oc.get('riesgos_ergonomicos', [])
+                                st.write(f"**Físicos:** {', '.join(f_list) if isinstance(f_list, list) and f_list else 'Ninguno'}")
+                                st.write(f"**Ergonómicos:** {', '.join(e_list) if isinstance(e_list, list) and e_list else 'Ninguno'}")
+                            with col_r2:
+                                b_list = eval_oc.get('riesgos_biologicos', [])
+                                q_list = eval_oc.get('riesgos_quimicos', [])
+                                st.write(f"**Biológicos:** {', '.join(b_list) if isinstance(b_list, list) and b_list else 'Ninguno'}")
+                                st.write(f"**Químicos:** {', '.join(q_list) if isinstance(q_list, list) and q_list else 'Ninguno'}")
+                            
+                            st.markdown("**Resolución Médica:**")
+                            st.code(f"Uso EPP Estandarizado: {eval_oc.get('uso_epp', 'N/A')} | Dictamen Final: {dictamen_str}")
+                            st.write(f"**Observaciones:** {eval_oc.get('observaciones', 'Sin observaciones adicionales.')}")
+
+        except Exception as e:
+            st.error(f"Falla crítica en la recuperación de telemetría de auditoría: {e}")# ------------------------------------------
 # NODO C: SALUD OCUPACIONAL
 # ------------------------------------------
 with tab_ocupacional:
