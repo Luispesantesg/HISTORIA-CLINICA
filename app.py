@@ -7,15 +7,23 @@ import pandas as pd
 import fitz  # PyMuPDF
 import tempfile
 import os
+import json
+import google.generativeai as genai
 
 # ==========================================
-# 1. CONFIGURACIÓN DEL ENTORNO
+# 1. CONFIGURACIÓN DEL ENTORNO E INFERENCIA
 # ==========================================
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
 # Inicialización de la Semilla Dimensional para Auto-Limpieza
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
+
+# Inicialización del Motor de Inferencia NLP
+try:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+except KeyError:
+    st.warning("Alerta de Configuración: GEMINI_API_KEY no detectada en secrets.toml. El módulo NLP estará inactivo.")
 
 # ==========================================
 # 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD
@@ -97,7 +105,6 @@ PERFILES_MEDICOS = {
 def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perfil_medico):
     pdf = FPDF()
     pdf.add_page()
-    
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
     pdf.set_font("Arial", 'B', 12)
@@ -106,43 +113,66 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.cell(0, 5, perfil_medico['subtitulo'], ln=True, align='C')
     pdf.line(10, 35, 200, 35)
     pdf.ln(10)
-    
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(30, 8, "Fecha:", border=0)
     pdf.set_font("Arial", '', 10)
     pdf.cell(50, 8, fecha, ln=False)
-    
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(32, 8, "ID/Documento:", border=0) 
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 8, id_paciente, ln=True)
-    
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(30, 8, "Paciente:", border=0)
     pdf.set_font("Arial", '', 10)
     pdf.cell(100, 8, nombres, ln=False)
-    
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(15, 8, "Edad:", border=0)
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 8, str(edad), ln=True)
-    
     pdf.line(10, 60, 200, 60)
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "Rp. / Indicaciones:", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 8, plan_terapeutico)
-    
     pdf.ln(30)
     pdf.line(60, pdf.get_y(), 150, pdf.get_y())
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
-    
     return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # ==========================================
-# 5. LÓGICA REACTIVA Y CALLBACKS
+# 5. PUENTE DE INFERENCIA CLÍNICA (NLP)
+# ==========================================
+def estructurar_telemetria_laboratorio(texto_crudo: str) -> pd.DataFrame:
+    """Extrae datos clínicos y fuerza un esquema JSON mediante API Gemini."""
+    prompt_ingenieria = f"""
+    Actúa como un algoritmo experto en extracción de datos de laboratorio clínico.
+    Analiza el texto médico proporcionado y extrae únicamente los parámetros evaluados.
+    Debes devolver un arreglo de objetos JSON estructurados exactamente así:
+    [
+      {{"Biomarcador": "Nombre", "Resultado": "Valor numérico o cualitativo", "Unidad": "Unidad de medida si existe", "Rango de Referencia": "Rango de normalidad si existe"}}
+    ]
+    Si un valor no existe, usa un string vacío "". Excluye nombres de pacientes, médicos, direcciones o cabeceras del laboratorio.
+
+    Texto a procesar:
+    {texto_crudo}
+    """
+    try:
+        modelo = genai.GenerativeModel('gemini-1.5-flash')
+        # Se fuerza el mimetype a application/json para evitar errores de parseo
+        respuesta = modelo.generate_content(
+            prompt_ingenieria,
+            generation_config=genai.GenerationConfig(response_mime_type="application/json")
+        )
+        matriz_diccionarios = json.loads(respuesta.text)
+        return pd.DataFrame(matriz_diccionarios)
+    except Exception as e:
+        st.error(f"Falla en el motor de inferencia NLP: {e}")
+        return pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
+
+# ==========================================
+# 6. LÓGICA REACTIVA Y CALLBACKS
 # ==========================================
 def buscar_paciente_por_id():
     fv = st.session_state.form_version
@@ -168,7 +198,7 @@ def buscar_paciente_por_id():
             st.toast(f"Error en la extracción de telemetría: {e}", icon="⚠️")
 
 # ==========================================
-# 6. TOPOLOGÍA DE NAVEGACIÓN Y HUD
+# 7. TOPOLOGÍA DE NAVEGACIÓN Y HUD
 # ==========================================
 st.title("⚕️ Sistema Integrado de Historia Clínica")
 
@@ -272,23 +302,25 @@ with tab_ingreso:
         )
 
     # ==========================================
-    # NUEVO MÓDULO: INGESTA DE LABORATORIO (ESTRUCTURADO JSONB)
+    # NUEVO MÓDULO: INGESTA DE LABORATORIO (NLP)
     # ==========================================
     st.markdown("---")
     with st.container(border=True):
-        st.subheader("4. Panel Estructurado de Laboratorio")
+        st.subheader("4. Panel Estructurado de Laboratorio asistido por IA")
         
         archivo_lab = st.file_uploader("Cargar reporte de laboratorio (Formato PDF exclusivo):", type=["pdf"], key=f"val_pdf_file_{fv}")
         
-        key_raw_lab = f"val_lab_raw_{fv}"
-        if key_raw_lab not in st.session_state:
-            st.session_state[key_raw_lab] = ""
+        # Estado Dimensional para la Tabla de Laboratorio
+        key_df_lab = f"df_lab_state_{fv}"
+        if key_df_lab not in st.session_state:
+            st.session_state[key_df_lab] = pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
 
         if archivo_lab is not None:
-            if st.button("⚙️ Ejecutar Extracción de Texto Base", type="secondary"):
-                with st.spinner("Procesando lectura física en disco duro..."):
+            if st.button("⚙️ Ejecutar Extracción Automatizada (NLP)", type="secondary"):
+                with st.spinner("Conectando con el motor de inferencia clínica..."):
                     ruta_fisica = ""
                     try:
+                        # Fase 1: Extracción Física I/O
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                             tmp_file.write(archivo_lab.getvalue())
                             ruta_fisica = tmp_file.name
@@ -299,29 +331,26 @@ with tab_ingreso:
                         doc.close()
                         
                         if not texto_crudo.strip():
-                            st.error("Diagnóstico: El archivo físico no contiene caracteres legibles.")
+                            st.error("Diagnóstico Crítico: El archivo físico no contiene caracteres legibles.")
                         else:
-                            st.session_state[key_raw_lab] = texto_crudo
-                            st.success("Telemetría base capturada con éxito.")
-                            st.rerun()
+                            # Fase 2: Inferencia Semántica NLP
+                            df_generado = estructurar_telemetria_laboratorio(texto_crudo)
+                            st.session_state[key_df_lab] = df_generado
+                            st.success("Protocolo NLP Exitoso: Matriz de datos estructurada e inyectada.")
+                            st.rerun() # Fuerza la recarga para mostrar los datos en la tabla
                             
                     except Exception as e:
-                        st.error(f"Falla crítica de I/O o lectura nativa: {e}")
+                        st.error(f"Falla en el pipeline de procesamiento: {e}")
                     finally:
                         if ruta_fisica and os.path.exists(ruta_fisica):
                             os.remove(ruta_fisica)
 
-        if st.session_state[key_raw_lab]:
-            with st.expander("👁️ Ver Datos Crudos Extraídos del PDF (Para transcripción)"):
-                st.text(st.session_state[key_raw_lab])
-
         st.markdown("**Matriz Analítica de Biomarcadores (Editable):**")
-        st.caption("ℹ️ Agregue las filas necesarias para registrar valores críticos o alterados. Esta tabla será indexada estructuralmente en Supabase.")
+        st.caption("ℹ️ Revise los datos extraídos por la IA. Puede modificar, agregar o eliminar filas según su criterio clínico antes de guardar.")
         
-        df_esquema_inicial = pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
-        
+        # La tabla ahora se alimenta del estado dinámico (st.session_state)
         df_lab_interactivo = st.data_editor(
-            df_esquema_inicial,
+            st.session_state[key_df_lab],
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
@@ -338,6 +367,7 @@ with tab_ingreso:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
                 nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
                 
+                # Serialización segura a JSON
                 df_filtrado = df_lab_interactivo.dropna(how='all')
                 matriz_lab_json = df_filtrado.to_dict(orient="records")
 
