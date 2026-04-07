@@ -15,11 +15,9 @@ import google.generativeai as genai
 # ==========================================
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
-# Inicialización de la Semilla Dimensional para Auto-Limpieza
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
-# Inicialización del Motor de Inferencia NLP
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 except KeyError:
@@ -145,7 +143,6 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
 # 5. PUENTE DE INFERENCIA CLÍNICA (NLP)
 # ==========================================
 def estructurar_telemetria_laboratorio(texto_crudo: str) -> pd.DataFrame:
-    """Extrae datos clínicos y fuerza un esquema JSON mediante API Gemini."""
     prompt_ingenieria = f"""
     Actúa como un algoritmo experto en extracción de datos de laboratorio clínico.
     Analiza el texto médico proporcionado y extrae únicamente los parámetros evaluados.
@@ -160,7 +157,6 @@ def estructurar_telemetria_laboratorio(texto_crudo: str) -> pd.DataFrame:
     """
     try:
         modelo = genai.GenerativeModel('gemini-1.5-flash')
-        # Se fuerza el mimetype a application/json para evitar errores de parseo
         respuesta = modelo.generate_content(
             prompt_ingenieria,
             generation_config=genai.GenerationConfig(response_mime_type="application/json")
@@ -221,8 +217,7 @@ with tab_ingreso:
         st.download_button("📥 Descargar Receta Médica (PDF)", 
                            data=st.session_state["pdf_reciente"], 
                            file_name=st.session_state["nombre_pdf_reciente"], 
-                           mime="application/pdf",
-                           type="secondary")
+                           mime="application/pdf")
         st.markdown("---")
 
     st.subheader("1. Filiación y Antecedentes")
@@ -310,7 +305,6 @@ with tab_ingreso:
         
         archivo_lab = st.file_uploader("Cargar reporte de laboratorio (Formato PDF exclusivo):", type=["pdf"], key=f"val_pdf_file_{fv}")
         
-        # Estado Dimensional para la Tabla de Laboratorio
         key_df_lab = f"df_lab_state_{fv}"
         if key_df_lab not in st.session_state:
             st.session_state[key_df_lab] = pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
@@ -320,7 +314,6 @@ with tab_ingreso:
                 with st.spinner("Conectando con el motor de inferencia clínica..."):
                     ruta_fisica = ""
                     try:
-                        # Fase 1: Extracción Física I/O
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                             tmp_file.write(archivo_lab.getvalue())
                             ruta_fisica = tmp_file.name
@@ -333,7 +326,6 @@ with tab_ingreso:
                         if not texto_crudo.strip():
                             st.error("Diagnóstico Crítico: El archivo físico no contiene caracteres legibles.")
                         else:
-                            # Fase 2: Inferencia Semántica NLP
                             df_generado = estructurar_telemetria_laboratorio(texto_crudo)
                             st.session_state[key_df_lab] = df_generado
                             st.success("Protocolo NLP Exitoso: Matriz de datos estructurada e inyectada.")
@@ -348,22 +340,14 @@ with tab_ingreso:
         st.markdown("**Matriz Analítica de Biomarcadores (Editable):**")
         st.caption("ℹ️ Revise los datos extraídos por la IA. Puede modificar, agregar o eliminar filas según su criterio clínico antes de guardar.")
         
-        # Corrección de Parámetros y Sangría aplicada aquí
         df_lab_interactivo = st.data_editor(
             st.session_state[key_df_lab],
             num_rows="dynamic",
             width='stretch',
             hide_index=True,
             key=f"editor_json_lab_{fv}"
-        )       
-        # La tabla ahora se alimenta del estado dinámico (st.session_state)
-	df_lab_interactivo = st.data_editor(
-            st.session_state[key_df_lab],
-            num_rows="dynamic",
-            width='stretch', # PARCHE APLICADO
-            hide_index=True,
-            key=f"editor_json_lab_{fv}"
         )
+
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", width='stretch')
 
     if submitted:
@@ -374,7 +358,6 @@ with tab_ingreso:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
                 nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
                 
-                # Serialización segura a JSON
                 df_filtrado = df_lab_interactivo.dropna(how='all')
                 matriz_lab_json = df_filtrado.to_dict(orient="records")
 
