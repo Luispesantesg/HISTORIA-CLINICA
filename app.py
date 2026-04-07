@@ -11,7 +11,7 @@ import pdfplumber
 # ==========================================
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
-# Inicialización de la Semilla Dimensional para Auto-Limpieza
+# Inicialización de la Semilla Dimensional para Auto-Limpieza de Formulario
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
@@ -280,14 +280,28 @@ with tab_ingreso:
         texto_extraido_lab = ""
         
         if archivo_lab is not None:
-            with st.spinner("Ejecutando motor de extracción de datos OCR..."):
+            with st.spinner("Ejecutando motor de extracción de datos..."):
                 try:
+                    # Corrección Crítica: Puntero de memoria a offset 0
+                    archivo_lab.seek(0)
+                    
                     with pdfplumber.open(archivo_lab) as pdf:
-                        paginas = [pagina.extract_text() for pagina in pdf.pages if pagina.extract_text()]
+                        paginas = []
+                        for pagina in pdf.pages:
+                            texto = pagina.extract_text()
+                            if texto:
+                                paginas.append(texto)
+                        
                         texto_extraido_lab = "\n".join(paginas)
-                    st.toast("Extracción de telemetría de laboratorio exitosa.", icon="✅")
+                    
+                    # Heurística de detección de imágenes rasterizadas
+                    if not texto_extraido_lab.strip():
+                        st.warning("⚠️ **Diagnóstico de Ingesta:** Archivo procesado. No se detectaron caracteres. Probablemente sea una imagen escaneada (rasterizada) sin capa de texto estructurado.")
+                    else:
+                        st.toast("Extracción de telemetría de laboratorio exitosa.", icon="✅")
+                        
                 except Exception as e:
-                    st.error(f"Falla crítica en el motor de lectura PDF. Archivo corrupto o no compatible: {e}")
+                    st.error(f"Falla crítica en el motor de lectura PDF: {e}")
 
         nodo_laboratorio = st.text_area(
             "Síntesis de Laboratorio (Valores Críticos / Alterados):", 
@@ -313,7 +327,6 @@ with tab_ingreso:
                 }
                 supabase.table("pacientes").upsert(paciente_data).execute()
 
-                # Se incluye nodo_laboratorio en la inserción
                 evolucion_data = {
                     "id_paciente": id_paciente, "motivo_consulta": motivo_consulta, "enfermedad_actual": enfermedad_actual,
                     "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
@@ -337,7 +350,7 @@ with tab_ingreso:
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Falla transaccional a nivel de base de datos: {e}. Verifique que la columna 'nodo_laboratorio' exista en Supabase.")
+                st.error(f"Falla transaccional a nivel de base de datos: {e}. Verifique la existencia de la columna 'nodo_laboratorio'.")
 
 # ------------------------------------------
 # NODO B: LECTURA Y AUDITORÍA (QUERY + ANALÍTICA)
@@ -420,7 +433,6 @@ with tab_consulta:
                             st.write(f"**A:** {evol.get('nodo_a', '')}")
                             st.write(f"**P:** {evol.get('nodo_p', '')}")
                             
-                            # Renderizado del módulo de laboratorio en el histórico
                             lab_historico = evol.get('nodo_laboratorio')
                             if lab_historico:
                                 st.info(f"**🔬 Síntesis de Laboratorio:**\n{lab_historico}")
