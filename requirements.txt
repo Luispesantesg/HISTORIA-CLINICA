@@ -4,3 +4,4 @@ httpx>=0.27.0
 fpdf
 pandas
 PyMuPDF
+pip install google-generativeai
