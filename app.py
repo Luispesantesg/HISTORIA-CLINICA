@@ -8,13 +8,13 @@ import os
 # Importaciones de la Arquitectura Modular
 from auth import verificar_autenticacion
 from database import supabase, cargar_catalogo_cie10_csv, PERFILES_MEDICOS
-from pdf_engine import generar_receta_pdf
+from pdf_engine import generar_receta_pdf, generar_certificado_aptitud_pdf
 from nlp_parser import estructurar_telemetria_laboratorio
 
 # ==========================================
 # CONFIGURACIÓN DEL ENTORNO
 # ==========================================
-st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
+st.set_page_config(page_title="HCE - Medicina General y Ocupacional", page_icon="⚕️", layout="wide")
 
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
@@ -59,12 +59,18 @@ perfil_activo = PERFILES_MEDICOS.get(usuario_actual, PERFILES_MEDICOS["luis_pesa
 st.caption(f"Sesión activa: {perfil_activo['nombre']}")
 st.markdown("---")
 
-tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 Auditoría Longitudinal del Paciente"])
+# Expansión de la Topología: Se añade el tercer nodo
+tab_ingreso, tab_consulta, tab_ocupacional = st.tabs([
+    "📝 Medicina General", 
+    "🔍 Auditoría Longitudinal",
+    "⚙️ Salud Ocupacional"
+])
+
 lista_cie10 = cargar_catalogo_cie10_csv()
 fv = st.session_state.form_version
 
 # ------------------------------------------
-# NODO A: ESCRITURA Y EMISIÓN
+# NODO A: ESCRITURA Y EMISIÓN (MEDICINA GENERAL)
 # ------------------------------------------
 with tab_ingreso:
     if "pdf_reciente" in st.session_state:
@@ -336,3 +342,89 @@ with tab_consulta:
                             
         except Exception as e:
             st.error(f"Falla en la recuperación de telemetría: {e}")
+
+# ------------------------------------------
+# NODO C: SALUD OCUPACIONAL
+# ------------------------------------------
+with tab_ocupacional:
+    if "pdf_ocupacional_reciente" in st.session_state:
+        st.success("Protocolo Exitoso: Matriz ocupacional registrada y Certificado de Aptitud emitido.")
+        st.download_button("📥 Descargar Certificado de Aptitud (PDF)",
+                           data=st.session_state["pdf_ocupacional_reciente"],
+                           file_name=st.session_state["nombre_pdf_ocupacional_reciente"],
+                           mime="application/pdf",
+                           key=f"btn_dw_ocup_{fv}")
+        st.markdown("---")
+
+    st.subheader("1. Identificación del Empleado")
+    col_oc_1, col_oc_2 = st.columns(2)
+    with col_oc_1:
+        # Recuperamos datos del estado si ya se buscaron en la Pestaña 1
+        id_pac_oc_val = st.session_state.get(f"val_id_{fv}", "")
+        nom_oc_val = st.session_state.get(f"val_nombres_{fv}", "")
+        
+        id_paciente_oc = st.text_input("Documento de Identidad:", value=id_pac_oc_val, key=f"val_id_oc_{fv}").strip()
+        nombres_oc = st.text_input("Apellidos y Nombres:", value=nom_oc_val, key=f"val_nom_oc_{fv}").strip()
+    with col_oc_2:
+        edad_oc_val = st.session_state.get(f"val_edad_{fv}", 0)
+        edad_oc = st.number_input("Edad (Años):", min_value=0, max_value=120, step=1, value=edad_oc_val, key=f"val_edad_oc_{fv}")
+        cargo_oc = st.text_input("Puesto de Trabajo / Cargo (Obligatorio):", key=f"val_cargo_oc_{fv}").strip()
+
+    st.markdown("---")
+    st.subheader("2. Matriz de Exposición a Riesgos")
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
+        r_fisicos = st.multiselect("Riesgos Físicos:", ["Ruido", "Vibración", "Radiación Ionizante", "Radiación No Ionizante", "Iluminación Deficiente", "Temperaturas Extremas", "Estrés Térmico"], key=f"val_rf_{fv}")
+        r_ergonomicos = st.multiselect("Riesgos Ergonómicos:", ["Levantamiento Manual de Cargas", "Movimientos Repetitivos", "Posturas Forzadas", "Pantallas de Visualización de Datos (PVD)"], key=f"val_re_{fv}")
+    with col_r2:
+        r_biologicos = st.multiselect("Riesgos Biológicos:", ["Virus", "Bacterias", "Hongos", "Fluidos Corporales", "Vectores"], key=f"val_rb_{fv}")
+        r_quimicos = st.multiselect("Riesgos Químicos:", ["Polvos", "Gases", "Vapores", "Humos Metálicos", "Sustancias Tóxicas"], key=f"val_rq_{fv}")
+
+    st.markdown("---")
+    st.subheader("3. Dictamen de Aptitud y Resoluciones")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        uso_epp_oc = st.selectbox("Uso de EPP estandarizado:", ["Sí", "No", "Parcial", "No Aplica"], key=f"val_epp_{fv}")
+        dictamen_oc = st.selectbox("Dictamen de Aptitud Médica:", ["Apto", "Apto con Restricciones", "No Apto", "Evaluación Aplazada"], key=f"val_dictamen_{fv}")
+    with col_d2:
+        obs_oc = st.text_area("Observaciones / Restricciones:", height=100, key=f"val_obs_oc_{fv}").strip()
+
+    submitted_oc = st.button("Guardar Evaluación y Procesar Certificado", type="primary", width='stretch', key=f"btn_sub_oc_{fv}")
+
+    if submitted_oc:
+        if not id_paciente_oc or not cargo_oc:
+            st.error("Error Lógico: El Documento de Identidad y el Cargo son mandatorios para la certificación ocupacional.")
+        else:
+            try:
+                # 1. Transacción a Supabase
+                evaluacion_data = {
+                    "id_paciente": id_paciente_oc,
+                    "cargo": cargo_oc,
+                    "riesgos_fisicos": r_fisicos,
+                    "riesgos_ergonomicos": r_ergonomicos,
+                    "riesgos_biologicos": r_biologicos,
+                    "riesgos_quimicos": r_quimicos,
+                    "uso_epp": uso_epp_oc,
+                    "dictamen": dictamen_oc,
+                    "observaciones": obs_oc
+                }
+                # La API de Python para Supabase auto-serializa las listas a JSONB
+                supabase.table("evaluaciones_ocupacionales").insert(evaluacion_data).execute()
+
+                # 2. Generación del Certificado PDF
+                fecha_actual_oc = datetime.now().strftime("%d/%m/%Y")
+                nombres_impr_oc = nombres_oc if nombres_oc else "Empleado No Registrado"
+
+                pdf_bytes_oc = generar_certificado_aptitud_pdf(
+                    id_paciente_oc, nombres_impr_oc, edad_oc, fecha_actual_oc,
+                    cargo_oc, dictamen_oc, obs_oc, perfil_activo
+                )
+
+                st.session_state["pdf_ocupacional_reciente"] = pdf_bytes_oc
+                st.session_state["nombre_pdf_ocupacional_reciente"] = f"Aptitud_{id_paciente_oc}.pdf"
+
+                st.session_state.form_version += 1
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Falla transaccional a nivel de base de datos ocupacional: {e}")
