@@ -337,7 +337,7 @@ with tab_ingreso:
                             df_generado = estructurar_telemetria_laboratorio(texto_crudo)
                             st.session_state[key_df_lab] = df_generado
                             st.success("Protocolo NLP Exitoso: Matriz de datos estructurada e inyectada.")
-                            st.rerun() # Fuerza la recarga para mostrar los datos en la tabla
+                            st.rerun()
                             
                     except Exception as e:
                         st.error(f"Falla en el pipeline de procesamiento: {e}")
@@ -348,6 +348,14 @@ with tab_ingreso:
         st.markdown("**Matriz Analítica de Biomarcadores (Editable):**")
         st.caption("ℹ️ Revise los datos extraídos por la IA. Puede modificar, agregar o eliminar filas según su criterio clínico antes de guardar.")
         
+        # Corrección de Parámetros y Sangría aplicada aquí
+        df_lab_interactivo = st.data_editor(
+            st.session_state[key_df_lab],
+            num_rows="dynamic",
+            width='stretch',
+            hide_index=True,
+            key=f"editor_json_lab_{fv}"
+        )       
         # La tabla ahora se alimenta del estado dinámico (st.session_state)
 	df_lab_interactivo = st.data_editor(
             st.session_state[key_df_lab],
