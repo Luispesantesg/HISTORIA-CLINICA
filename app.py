@@ -4,15 +4,14 @@ from supabase import create_client, Client
 from fpdf import FPDF
 from datetime import datetime
 import pandas as pd
-import pdfplumber
-import io  # Librería nativa para manejo de buffers de memoria
+import fitz  # NUEVO MOTOR: PyMuPDF (Sustituye a pdfplumber y a io)
 
 # ==========================================
 # 1. CONFIGURACIÓN DEL ENTORNO
 # ==========================================
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
-# Inicialización de la Semilla Dimensional para Auto-Limpieza de Formulario
+# Inicialización de la Semilla Dimensional
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
@@ -271,7 +270,7 @@ with tab_ingreso:
         )
 
     # ==========================================
-    # NUEVO MÓDULO: INGESTA DE LABORATORIO (PDF)
+    # NUEVO MÓDULO: INGESTA DE LABORATORIO (PyMuPDF)
     # ==========================================
     st.markdown("---")
     with st.container(border=True):
@@ -281,32 +280,28 @@ with tab_ingreso:
         texto_extraido_lab = ""
         
         if archivo_lab is not None:
-            with st.spinner("Ejecutando motor de extracción de datos..."):
+            with st.spinner("Iniciando motor de abstracción C++ (PyMuPDF)..."):
                 try:
-                    # 1. Resetear el puntero de memoria
-                    archivo_lab.seek(0)
+                    # Inyección directa de bytes al motor avanzado
+                    stream_bytes = archivo_lab.read()
+                    doc = fitz.open(stream=stream_bytes, filetype="pdf")
                     
-                    # 2. Forzar conversión a Buffer Nativo Puro (Bypass de Streamlit)
-                    buffer_nativo = io.BytesIO(archivo_lab.read())
+                    paginas = []
+                    # Extracción agresiva ignorando estructuras complejas
+                    for pagina in doc:
+                        texto = pagina.get_text()
+                        if texto:
+                            paginas.append(texto)
                     
-                    # 3. Lectura con tolerancia a errores de layout
-                    with pdfplumber.open(buffer_nativo) as pdf:
-                        paginas = []
-                        for pagina in pdf.pages:
-                            texto = pagina.extract_text(layout=True) 
-                            if texto:
-                                paginas.append(texto)
-                        
-                        texto_extraido_lab = "\n".join(paginas)
+                    texto_extraido_lab = "\n".join(paginas)
                     
-                    # 4. Auditoría de Extracción
                     if not texto_extraido_lab.strip():
-                        st.warning("⚠️ **Bloqueo Detectado:** El documento es vectorial, pero el motor devolvió una matriz vacía. Esto indica que el laboratorio aplicó un cifrado DRM contra extracción de datos o utiliza fuentes CID no estandarizadas.")
+                        st.error("Falla Crítica de Compilación: El documento presenta un cifrado no resoluble o es una imagen plana oculta bajo una máscara PDF.")
                     else:
-                        st.toast("Extracción de telemetría de laboratorio exitosa.", icon="✅")
+                        st.toast("Extracción de telemetría exitosa vía PyMuPDF.", icon="✅")
                         
                 except Exception as e:
-                    st.error(f"Falla crítica en el motor de lectura PDF: {e}")
+                    st.error(f"Excepción de tiempo de ejecución en el análisis del archivo: {e}")
 
         nodo_laboratorio = st.text_area(
             "Síntesis de Laboratorio (Valores Críticos / Alterados):", 
