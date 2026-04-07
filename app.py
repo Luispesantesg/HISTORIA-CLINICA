@@ -105,7 +105,7 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.line(10, 35, 200, 35)
     pdf.ln(10)
     
-    # Fila 1: Fecha y Documento (Vector de renderizado optimizado)
+    # Fila 1: Fecha y Documento
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(30, 8, "Fecha:", border=0)
     pdf.set_font("Arial", '', 10)
@@ -144,7 +144,38 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 5. TOPOLOGÍA DE NAVEGACIÓN REACTIVA
+# 5. LÓGICA REACTIVA Y CALLBACKS (NUEVO MOTOR)
+# ==========================================
+def buscar_paciente_por_id():
+    """Ejecuta consulta a Supabase y auto-completa el formulario si el paciente existe."""
+    fv = st.session_state.form_version
+    key_id = f"val_id_{fv}"
+    
+    # Extraer el valor actual ingresado
+    id_ingresado = st.session_state.get(key_id, "").strip()
+    
+    if id_ingresado:
+        try:
+            res = supabase.table("pacientes").select("*").eq("id_paciente", id_ingresado).execute()
+            if res.data:
+                paciente = res.data[0]
+                # Modificación de la semilla de estado para inyectar datos
+                st.session_state[f"val_nombres_{fv}"] = paciente.get("nombres", "")
+                st.session_state[f"val_edad_{fv}"] = int(paciente.get("edad", 0))
+                st.session_state[f"val_app_{fv}"] = paciente.get("antecedentes_personales", "")
+                st.session_state[f"val_apf_{fv}"] = paciente.get("antecedentes_familiares", "")
+                
+                # Validación de catálogo de sexo para evitar desajustes en el selectbox
+                sexo_db = paciente.get("sexo", "Masculino")
+                if sexo_db in ["Masculino", "Femenino"]:
+                    st.session_state[f"val_sexo_{fv}"] = sexo_db
+                    
+                st.toast(f"Telemetría recuperada: Datos de {paciente.get('nombres')} sincronizados.", icon="✅")
+        except Exception as e:
+            st.toast(f"Error en la extracción de telemetría: {e}", icon="⚠️")
+
+# ==========================================
+# 6. TOPOLOGÍA DE NAVEGACIÓN Y HUD
 # ==========================================
 st.title("⚕️ Sistema Integrado de Historia Clínica")
 
@@ -176,7 +207,8 @@ with tab_ingreso:
     st.subheader("1. Filiación y Antecedentes")
     col_fil_1, col_fil_2 = st.columns(2)
     with col_fil_1:
-        id_paciente = st.text_input("Documento de Identidad (Obligatorio):", key=f"val_id_{fv}").strip()
+        # Se integra el callback on_change
+        id_paciente = st.text_input("Documento de Identidad (Obligatorio):", key=f"val_id_{fv}", on_change=buscar_paciente_por_id).strip()
         nombres = st.text_input("Apellidos y Nombres:", key=f"val_nombres_{fv}").strip()
         sexo = st.selectbox("Sexo Biológico:", ["Masculino", "Femenino"], key=f"val_sexo_{fv}")
         edad = st.number_input("Edad (Años):", min_value=0, max_value=120, step=1, key=f"val_edad_{fv}")
@@ -187,7 +219,24 @@ with tab_ingreso:
     st.markdown("---")
     st.subheader("2. Signos Vitales y Antropometría")
     col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns(5)
-    with col_v1: pa = st.text_input("PA (mmHg):", placeholder="120/80", key=f"val_pa_{fv}").strip()
+    
+    with col_v1: 
+        pa = st.text_input("PA (mmHg):", placeholder="120/80", key=f"val_pa_{fv}").strip()
+        # Motor de Análisis Dinámico de PAM
+        if pa and "/" in pa:
+            try:
+                sys_str, dia_str = pa.split("/")
+                sys_val, dia_val = int(sys_str), int(dia_str)
+                pam_val = round((sys_val + 2 * dia_val) / 3, 1)
+                
+                # Criterio normativo JNC 8 / AHA
+                if sys_val >= 140 or dia_val >= 90:
+                    st.error(f"PAM: {pam_val} mmHg (Riesgo HTA)")
+                else:
+                    st.success(f"PAM: {pam_val} mmHg")
+            except ValueError:
+                st.warning("Formato PA inválido")
+                
     with col_v2: fc = st.number_input("FC (lpm):", min_value=0, step=1, key=f"val_fc_{fv}")
     with col_v3: temp = st.number_input("Temp (°C):", format="%.1f", step=0.1, key=f"val_temp_{fv}")
     with col_v4: peso_kg = st.number_input("Peso (kg):", format="%.2f", min_value=0.0, step=0.1, key=f"val_peso_{fv}")
@@ -212,30 +261,34 @@ with tab_ingreso:
             imc_texto_db = f"[Antropometría] IMC: {imc_val} ({estrato})"
 
     st.markdown("---")
-    motivo_consulta = st.text_input("Motivo de Consulta:", key=f"val_motivo_{fv}").strip()
-    enfermedad_actual = st.text_area("Enfermedad Actual:", height=100, key=f"val_ea_{fv}").strip()
     
-    col_clin_1, col_clin_2 = st.columns(2)
-    with col_clin_1:
-        nodo_s = st.text_area("Subjetivo (S):", height=120, key=f"val_s_{fv}").strip()
-        nodo_o = st.text_area("Objetivo (O):", height=120, key=f"val_o_{fv}").strip()
-    with col_clin_2:
-        nodo_a = st.text_area("Apreciación (A):", height=120, key=f"val_a_{fv}").strip()
-        nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120, key=f"val_p_{fv}").strip()
+    # Contenedor visual estructurado para matriz clínica
+    with st.container(border=True):
+        st.subheader("3. Matriz Clínica Estructurada")
+        motivo_consulta = st.text_input("Motivo de Consulta:", key=f"val_motivo_{fv}").strip()
+        enfermedad_actual = st.text_area("Enfermedad Actual:", height=100, key=f"val_ea_{fv}").strip()
         
-    cie_10_seleccion = st.selectbox(
-        "Diagnóstico CIE-10 Principal (Normativa Técnica):", 
-        options=lista_cie10, 
-        index=None,
-        placeholder="Haga clic aquí y escriba el código o patología para filtrar...",
-        key=f"val_cie10_{fv}"
-    )
+        col_clin_1, col_clin_2 = st.columns(2)
+        with col_clin_1:
+            nodo_s = st.text_area("Subjetivo (S):", height=120, key=f"val_s_{fv}").strip()
+            nodo_o = st.text_area("Objetivo (O):", height=120, key=f"val_o_{fv}").strip()
+        with col_clin_2:
+            nodo_a = st.text_area("Apreciación (A):", height=120, key=f"val_a_{fv}").strip()
+            nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120, key=f"val_p_{fv}").strip()
+            
+        cie_10_seleccion = st.selectbox(
+            "Diagnóstico CIE-10 Principal (Normativa Técnica):", 
+            options=lista_cie10, 
+            index=None,
+            placeholder="Haga clic aquí y escriba el código o patología para filtrar...",
+            key=f"val_cie10_{fv}"
+        )
 
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
 
     if submitted:
         if not id_paciente or not nodo_p:
-            st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento (P) son mandatorios.")
+            st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento (P) son mandatorios para la ejecución del bloque.")
         else:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
@@ -268,7 +321,7 @@ with tab_ingreso:
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Falla transaccional: {e}")
+                st.error(f"Falla transaccional a nivel de base de datos: {e}")
 
 # ------------------------------------------
 # NODO B: LECTURA Y AUDITORÍA (QUERY + ANALÍTICA)
@@ -306,25 +359,33 @@ with tab_consulta:
                     st.info("No existen evoluciones clínicas documentadas para este paciente.")
                 else:
                     # ==========================================
-                    # MOTOR DE VIGILANCIA EPIDEMIOLÓGICA (CURVA PONDERAL)
+                    # MOTOR DE VIGILANCIA EPIDEMIOLÓGICA (CURVA PONDERAL Y MÉTRICAS)
                     # ==========================================
                     df_evol = pd.DataFrame(res_evol.data)
                     
                     if not df_evol.empty and 'peso' in df_evol.columns:
-                        # Transformación de datos cronológicos
                         df_evol['fecha_dt'] = pd.to_datetime(df_evol['fecha'])
                         df_evol_sorted = df_evol.sort_values('fecha_dt')
                         
-                        # Filtro estricto: Solo registros con peso válido
                         df_peso = df_evol_sorted[df_evol_sorted['peso'] > 0][['fecha_dt', 'peso']]
                         
                         if not df_peso.empty and len(df_peso) > 1:
                             st.markdown("### 📈 Monitor Epidemiológico: Fluctuación Ponderal")
-                            # Estandarización de formato para el eje X
+                            
                             df_peso['Fecha'] = df_peso['fecha_dt'].dt.strftime('%d/%m/%Y')
                             df_peso = df_peso.set_index('Fecha')
                             
-                            st.line_chart(df_peso['peso'])
+                            # Cálculo de Delta Ponderal
+                            peso_actual = float(df_peso['peso'].iloc[-1])
+                            peso_previo = float(df_peso['peso'].iloc[-2])
+                            delta_peso = round(peso_actual - peso_previo, 2)
+                            
+                            col_metric, col_chart = st.columns([1, 3])
+                            with col_metric:
+                                st.metric(label="Peso (Último Control)", value=f"{peso_actual} kg", delta=f"{delta_peso} kg", delta_color="inverse")
+                            with col_chart:
+                                st.line_chart(df_peso['peso'])
+                            
                             st.markdown("---")
 
                     st.markdown("### Línea de Tiempo Clínica (Controles Previos)")
