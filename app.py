@@ -1,186 +1,30 @@
 import streamlit as st
-import hmac
-from supabase import create_client, Client
-from fpdf import FPDF
 from datetime import datetime
 import pandas as pd
 import fitz  # PyMuPDF
 import tempfile
 import os
-import json
 
-# Nuevas librerías del SDK actualizado de Google
-from google import genai
-from google.genai import types
+# Importaciones de la Arquitectura Modular
+from auth import verificar_autenticacion
+from database import supabase, cargar_catalogo_cie10_csv, PERFILES_MEDICOS
+from pdf_engine import generar_receta_pdf
+from nlp_parser import estructurar_telemetria_laboratorio
 
 # ==========================================
-# 1. CONFIGURACIÓN DEL ENTORNO E INFERENCIA
+# CONFIGURACIÓN DEL ENTORNO
 # ==========================================
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
-# Inicialización del nuevo Cliente NLP
-gemini_client = None
-try:
-    gemini_client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-except KeyError:
-    st.warning("Alerta de Configuración: GEMINI_API_KEY no detectada en secrets.toml. El módulo NLP estará inactivo.")
-
-# ==========================================
-# 2. MOTOR DE AUTENTICACIÓN Y SEGURIDAD
-# ==========================================
-def verificar_autenticacion() -> bool:
-    if st.session_state.get("autenticado", False):
-        return True
-
-    st.title("🔒 Portal de Acceso Restringido")
-    st.markdown("Sistema de Historia Clínica Electrónica - Control de Acceso")
-    
-    with st.form("formulario_login"):
-        usuario = st.text_input("Identificador de Usuario:").strip()
-        contrasena = st.text_input("Clave de Acceso:", type="password").strip()
-        submit = st.form_submit_button("Iniciar Sesión", type="primary")
-
-        if submit:
-            try:
-                matriz_usuarios = st.secrets["credenciales"]
-                if usuario in matriz_usuarios:
-                    pass_valida = hmac.compare_digest(contrasena, matriz_usuarios[usuario])
-                    if pass_valida:
-                        st.session_state["autenticado"] = True
-                        st.session_state["usuario_activo"] = usuario
-                        st.rerun()
-                    else:
-                        st.error("Brecha de Seguridad: Contraseña inválida. Acceso denegado.")
-                else:
-                    st.error("Brecha de Seguridad: Identificador de usuario no reconocido.")
-            except KeyError:
-                st.error("Falla Crítica: El bloque [credenciales] no está definido en secrets.toml.")
-    return False
-
+# Barrera de Seguridad (Módulo Auth)
 if not verificar_autenticacion():
     st.stop()
 
 # ==========================================
-# 3. MOTORES DE DATOS Y CATÁLOGOS ESTÁTICOS
-# ==========================================
-@st.cache_resource
-def init_connection() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
-
-try:
-    supabase = init_connection()
-except Exception as e:
-    st.error(f"Falla crítica en la inicialización de la base de datos: {e}")
-    st.stop()
-
-@st.cache_data
-def cargar_catalogo_cie10_csv() -> list:
-    try:
-        df = pd.read_csv("cie10_completo.csv", dtype=str)
-        df['CODIGO'] = df['CODIGO'].fillna("").str.strip()
-        df['DESCRIPCION'] = df['DESCRIPCION'].fillna("").str.strip()
-        df['DIAGNOSTICO_COMPLETO'] = df['CODIGO'] + " - " + df['DESCRIPCION']
-        return df['DIAGNOSTICO_COMPLETO'].tolist()
-    except FileNotFoundError:
-        return ["Error - Archivo 'cie10_completo.csv' no detectado en el servidor."]
-
-# ==========================================
-# 4. MATRIZ DE PERFILES Y EXPORTACIÓN PDF
-# ==========================================
-PERFILES_MEDICOS = {
-    "luis_pesantes": {
-        "nombre": "Dr. Luis M. Pesantes",
-        "especialidad": "Médico General",
-        "subtitulo": "Magíster en Salud Ocupacional"
-    },
-    "cinthia_garcia": {
-        "nombre": "Dra. Cinthia Anabel García Dávila",
-        "especialidad": "Médico General", 
-        "subtitulo": "Atención Médica Integral" 
-    }
-}
-
-def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perfil_medico):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 8, f"{perfil_medico['nombre']} - {perfil_medico['especialidad']}", ln=True, align='C')
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(0, 5, perfil_medico['subtitulo'], ln=True, align='C')
-    pdf.line(10, 35, 200, 35)
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(30, 8, "Fecha:", border=0)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(50, 8, fecha, ln=False)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(32, 8, "ID/Documento:", border=0) 
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 8, id_paciente, ln=True)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(30, 8, "Paciente:", border=0)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(100, 8, nombres, ln=False)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(15, 8, "Edad:", border=0)
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 8, str(edad), ln=True)
-    pdf.line(10, 60, 200, 60)
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Rp. / Indicaciones:", ln=True)
-    pdf.set_font("Arial", '', 11)
-    pdf.multi_cell(0, 8, plan_terapeutico)
-    pdf.ln(30)
-    pdf.line(60, pdf.get_y(), 150, pdf.get_y())
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
-    return pdf.output(dest='S').encode('latin-1', 'replace')
-
-# ==========================================
-# 5. PUENTE DE INFERENCIA CLÍNICA (NUEVO SDK)
-# ==========================================
-def estructurar_telemetria_laboratorio(texto_crudo: str) -> pd.DataFrame:
-    if gemini_client is None:
-        st.error("El motor NLP se encuentra inactivo. Verifique sus credenciales.")
-        return pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
-        
-    prompt_ingenieria = f"""
-    Actúa como un algoritmo experto en extracción de datos de laboratorio clínico.
-    Analiza el texto médico proporcionado y extrae únicamente los parámetros evaluados.
-    Debes devolver un arreglo de objetos JSON estructurados exactamente así:
-    [
-      {{"Biomarcador": "Nombre", "Resultado": "Valor numérico o cualitativo", "Unidad": "Unidad de medida si existe", "Rango de Referencia": "Rango de normalidad si existe"}}
-    ]
-    Si un valor no existe, usa un string vacío "". Excluye nombres de pacientes, médicos, direcciones o cabeceras del laboratorio.
-
-    Texto a procesar:
-    {texto_crudo}
-    """
-    try:
-        # Llamada estructurada bajo la nueva API de google.genai
-        respuesta = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt_ingenieria,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
-        )
-        matriz_diccionarios = json.loads(respuesta.text)
-        return pd.DataFrame(matriz_diccionarios)
-    except Exception as e:
-        st.error(f"Falla en el motor de inferencia NLP: {e}")
-        return pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
-
-# ==========================================
-# 6. LÓGICA REACTIVA Y CALLBACKS
+# LÓGICA REACTIVA LOCAL
 # ==========================================
 def buscar_paciente_por_id():
     fv = st.session_state.form_version
@@ -206,7 +50,7 @@ def buscar_paciente_por_id():
             st.toast(f"Error en la extracción de telemetría: {e}", icon="⚠️")
 
 # ==========================================
-# 7. TOPOLOGÍA DE NAVEGACIÓN Y HUD
+# TOPOLOGÍA DE NAVEGACIÓN Y HUD
 # ==========================================
 st.title("⚕️ Sistema Integrado de Historia Clínica")
 
@@ -217,7 +61,6 @@ st.markdown("---")
 
 tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 Auditoría Longitudinal del Paciente"])
 lista_cie10 = cargar_catalogo_cie10_csv()
-
 fv = st.session_state.form_version
 
 # ------------------------------------------
@@ -272,7 +115,7 @@ with tab_ingreso:
         imc_val = round(peso_kg / (talla_m ** 2), 2)
         
         if edad < 19:
-            st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada. Requiere validación manual.")
+            st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada.")
             imc_texto_db = f"[Antropometría] IMC: {imc_val} (Pediátrico)"
         else:
             if imc_val < 18.5: estrato, color = "Bajo peso", "🔵"
@@ -308,9 +151,6 @@ with tab_ingreso:
             key=f"val_cie10_{fv}"
         )
 
-    # ==========================================
-    # NUEVO MÓDULO: INGESTA DE LABORATORIO (NLP)
-    # ==========================================
     st.markdown("---")
     with st.container(border=True):
         st.subheader("4. Panel Estructurado de Laboratorio asistido por IA")
@@ -402,7 +242,7 @@ with tab_ingreso:
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Falla transaccional a nivel de base de datos: {e}. Verifique que la columna 'nodo_laboratorio' en Supabase soporte formato JSON o JSONB.")
+                st.error(f"Falla transaccional a nivel de base de datos: {e}")
 
 # ------------------------------------------
 # NODO B: LECTURA Y AUDITORÍA (QUERY + ANALÍTICA)
