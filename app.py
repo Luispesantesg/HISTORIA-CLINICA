@@ -349,15 +349,14 @@ with tab_ingreso:
         st.caption("ℹ️ Revise los datos extraídos por la IA. Puede modificar, agregar o eliminar filas según su criterio clínico antes de guardar.")
         
         # La tabla ahora se alimenta del estado dinámico (st.session_state)
-        df_lab_interactivo = st.data_editor(
+	df_lab_interactivo = st.data_editor(
             st.session_state[key_df_lab],
             num_rows="dynamic",
-            use_container_width=True,
+            width='stretch', # PARCHE APLICADO
             hide_index=True,
             key=f"editor_json_lab_{fv}"
         )
-
-    submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
+    submitted = st.button("Guardar Historia y Procesar Receta", type="primary", width='stretch')
 
     if submitted:
         if not id_paciente or not nodo_p:
@@ -488,7 +487,7 @@ with tab_consulta:
                             if lab_historico:
                                 st.markdown("**🔬 Síntesis Analítica de Laboratorio:**")
                                 if isinstance(lab_historico, list):
-                                    st.dataframe(pd.DataFrame(lab_historico), use_container_width=True, hide_index=True)
+                                    st.dataframe(pd.DataFrame(lab_historico), width='stretch', hide_index=True)
                                 else:
                                     st.info(lab_historico)
                             
