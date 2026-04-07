@@ -7,7 +7,6 @@ import pandas as pd
 import fitz  # PyMuPDF
 import tempfile
 import os
-import json
 
 # ==========================================
 # 1. CONFIGURACIÓN DEL ENTORNO
@@ -140,7 +139,7 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
     
-    return pdf.output(dest='S').encode('latin-1')
+    return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # ==========================================
 # 5. LÓGICA REACTIVA Y CALLBACKS
@@ -285,7 +284,6 @@ with tab_ingreso:
         if key_raw_lab not in st.session_state:
             st.session_state[key_raw_lab] = ""
 
-        # Lógica de Extracción de PDF (Mantenida como Referencia)
         if archivo_lab is not None:
             if st.button("⚙️ Ejecutar Extracción de Texto Base", type="secondary"):
                 with st.spinner("Procesando lectura física en disco duro..."):
@@ -308,17 +306,15 @@ with tab_ingreso:
                             st.rerun()
                             
                     except Exception as e:
-                        st.error(f"Falla crítica de I/O o lectura C++: {e}")
+                        st.error(f"Falla crítica de I/O o lectura nativa: {e}")
                     finally:
                         if ruta_fisica and os.path.exists(ruta_fisica):
                             os.remove(ruta_fisica)
 
-        # Panel Colapsable para Referencia Cruda
         if st.session_state[key_raw_lab]:
             with st.expander("👁️ Ver Datos Crudos Extraídos del PDF (Para transcripción)"):
                 st.text(st.session_state[key_raw_lab])
 
-        # Matriz de Datos Interactiva (st.data_editor)
         st.markdown("**Matriz Analítica de Biomarcadores (Editable):**")
         st.caption("ℹ️ Agregue las filas necesarias para registrar valores críticos o alterados. Esta tabla será indexada estructuralmente en Supabase.")
         
@@ -342,8 +338,7 @@ with tab_ingreso:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
                 nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
                 
-                # Transformación de DataFrame a JSON (Diccionario) para Supabase
-                df_filtrado = df_lab_interactivo.dropna(how='all') # Elimina filas completamente vacías
+                df_filtrado = df_lab_interactivo.dropna(how='all')
                 matriz_lab_json = df_filtrado.to_dict(orient="records")
 
                 paciente_data = {
@@ -355,10 +350,10 @@ with tab_ingreso:
                 evolucion_data = {
                     "id_paciente": id_paciente, "motivo_consulta": motivo_consulta, "enfermedad_actual": enfermedad_actual,
                     "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
-                    "peso": peso_kg, "talla": talla_m,
+                    "peso": float(peso_kg), "talla": float(talla_m),
                     "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, 
                     "cie_10": cie_10_final,
-                    "nodo_laboratorio": matriz_lab_json  # Inyección del Payload Estructurado
+                    "nodo_laboratorio": matriz_lab_json 
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
@@ -447,7 +442,10 @@ with tab_consulta:
                             
                             peso_hist = evol.get('peso')
                             talla_hist = evol.get('talla')
+                            
                             str_peso = f"{peso_hist} kg" if peso_hist is not None and peso_hist > 0 else "N/A"
+                            str_talla = f"{talla_hist} m" if talla_hist is not None and talla_hist > 0 else "N/A"
+                            
                             st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')} | Peso: {str_peso} | Talla: {str_talla}")
                             
                             st.markdown("**Matriz SOAP y Complementarios:**")
@@ -456,15 +454,12 @@ with tab_consulta:
                             st.write(f"**A:** {evol.get('nodo_a', '')}")
                             st.write(f"**P:** {evol.get('nodo_p', '')}")
                             
-                            # Motor Analítico Compatible con JSON y Texto Heredado
                             lab_historico = evol.get('nodo_laboratorio')
                             if lab_historico:
                                 st.markdown("**🔬 Síntesis Analítica de Laboratorio:**")
                                 if isinstance(lab_historico, list):
-                                    # Renderizado de JSONB a DataFrame
                                     st.dataframe(pd.DataFrame(lab_historico), use_container_width=True, hide_index=True)
                                 else:
-                                    # Fallback para registros antiguos (String plano)
                                     st.info(lab_historico)
                             
         except Exception as e:
