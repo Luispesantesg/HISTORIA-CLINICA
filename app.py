@@ -7,8 +7,6 @@ import pandas as pd
 import fitz  # PyMuPDF
 import tempfile
 import os
-import io
-import json # NUEVA LIBRERÍA: Fundamental para el motor híbrido de lectura
 
 # ==========================================
 # 1. CONFIGURACIÓN DEL ENTORNO
@@ -237,7 +235,7 @@ with tab_ingreso:
         imc_val = round(peso_kg / (talla_m ** 2), 2)
         
         if edad < 19:
-            st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada.")
+            st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada. Requiere validación manual.")
             imc_texto_db = f"[Antropometría] IMC: {imc_val} (Pediátrico)"
         else:
             if imc_val < 18.5: estrato, color = "Bajo peso", "🔵"
@@ -274,65 +272,61 @@ with tab_ingreso:
         )
 
     # ==========================================
-    # NUEVO MÓDULO NIVEL 1: MATRIZ DE DATOS EDITABLE
+    # NUEVO MÓDULO: INGESTA DE LABORATORIO (DISCO FÍSICO I/O + CONTROL MANUAL)
     # ==========================================
     st.markdown("---")
     with st.container(border=True):
-        st.subheader("4. Matriz de Exámenes de Laboratorio e Imagen")
+        st.subheader("4. Panel de Exámenes de Laboratorio e Imagen")
         
         archivo_lab = st.file_uploader("Cargar reporte de laboratorio (Formato PDF exclusivo):", type=["pdf"], key=f"val_pdf_file_{fv}")
         
-        key_texto_crudo = f"lab_crudo_{fv}"
-        key_df_lab = f"df_lab_{fv}"
-        
-        if key_texto_crudo not in st.session_state:
-            st.session_state[key_texto_crudo] = ""
-            
-        if key_df_lab not in st.session_state:
-            st.session_state[key_df_lab] = pd.DataFrame([
-                {"Parámetro": "", "Valor": "", "Unidad": "", "Rango de Referencia": ""}
-            ])
+        # Semilla de Memoria Aislada para el componente
+        key_resumen_lab = f"val_lab_resumen_{fv}"
+        if key_resumen_lab not in st.session_state:
+            st.session_state[key_resumen_lab] = ""
 
+        # Terminal de Ejecución Manual
         if archivo_lab is not None:
             if st.button("⚙️ Ejecutar Extracción de Datos PDF", type="secondary"):
                 with st.spinner("Procesando lectura física en disco duro..."):
                     ruta_fisica = ""
                     try:
+                        # Volcado físico a disco (Bypass del buffer virtual)
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                             tmp_file.write(archivo_lab.getvalue())
                             ruta_fisica = tmp_file.name
                         
+                        # Lectura nativa C++
                         doc = fitz.open(ruta_fisica)
-                        paginas = [pagina.get_text() for pagina in doc if pagina.get_text()]
+                        paginas = []
+                        for pagina in doc:
+                            texto = pagina.get_text()
+                            if texto:
+                                paginas.append(texto)
+                        
                         texto_crudo = "\n".join(paginas)
                         doc.close()
                         
                         if not texto_crudo.strip():
                             st.error("Diagnóstico: El archivo físico no contiene caracteres legibles.")
                         else:
-                            st.session_state[key_texto_crudo] = texto_crudo
+                            st.session_state[key_resumen_lab] = texto_crudo
                             st.success("Protocolo exitoso: Telemetría capturada.")
-                            st.rerun()
+                            st.rerun() # Fuerza la actualización de la UI
                             
                     except Exception as e:
                         st.error(f"Falla crítica de I/O o lectura C++: {e}")
                     finally:
+                        # Recolección de basura obligatoria (Seguridad de servidor)
                         if ruta_fisica and os.path.exists(ruta_fisica):
                             os.remove(ruta_fisica)
 
-        if st.session_state[key_texto_crudo]:
-            with st.expander("📄 Ver texto crudo extraído del PDF (Referencia visual)"):
-                st.text_area("Información detectada:", value=st.session_state[key_texto_crudo], height=200, disabled=True)
-
-        st.markdown("**Matriz de Resultados Clínicos:**")
-        st.caption("Ingrese los valores críticos o alterados. Puede agregar o eliminar filas según sea necesario.")
-        
-        df_editado = st.data_editor(
-            st.session_state[key_df_lab],
-            num_rows="dynamic",
-            use_container_width=True,
-            hide_index=True,
-            key=f"editor_lab_{fv}"
+        # Renderizado del Componente Visual (Solo enlazado al key)
+        nodo_laboratorio = st.text_area(
+            "Síntesis de Laboratorio (Valores Críticos / Alterados):", 
+            height=150, 
+            help="Cargue un archivo y haga clic en 'Ejecutar Extracción' para poblar este campo.",
+            key=key_resumen_lab
         )
 
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
@@ -344,9 +338,6 @@ with tab_ingreso:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
                 nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
-                
-                # Serialización JSON del DataFrame 
-                json_laboratorio = df_editado.to_json(orient="records")
 
                 paciente_data = {
                     "id_paciente": id_paciente, "nombres": nombres, "edad": edad, "sexo": sexo,
@@ -360,7 +351,7 @@ with tab_ingreso:
                     "peso": peso_kg, "talla": talla_m,
                     "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, 
                     "cie_10": cie_10_final,
-                    "nodo_laboratorio": json_laboratorio 
+                    "nodo_laboratorio": nodo_laboratorio
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
@@ -377,7 +368,7 @@ with tab_ingreso:
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Falla transaccional a nivel de base de datos: {e}.")
+                st.error(f"Falla transaccional a nivel de base de datos: {e}. Verifique la existencia de la columna 'nodo_laboratorio'.")
 
 # ------------------------------------------
 # NODO B: LECTURA Y AUDITORÍA (QUERY + ANALÍTICA)
@@ -449,4 +440,20 @@ with tab_consulta:
                             
                             peso_hist = evol.get('peso')
                             talla_hist = evol.get('talla')
-                            str_peso = f"{peso_hist} kg" if peso_hist is not None and
+                            str_peso = f"{peso_hist} kg" if peso_hist is not None and peso_hist > 0 else "N/A"
+                            str_talla = f"{talla_hist} m" if talla_hist is not None and talla_hist > 0 else "N/A"
+                            
+                            st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')} | Peso: {str_peso} | Talla: {str_talla}")
+                            
+                            st.markdown("**Matriz SOAP y Complementarios:**")
+                            st.write(f"**S:** {evol.get('nodo_s', '')}")
+                            st.write(f"**O:** {evol.get('nodo_o', '')}")
+                            st.write(f"**A:** {evol.get('nodo_a', '')}")
+                            st.write(f"**P:** {evol.get('nodo_p', '')}")
+                            
+                            lab_historico = evol.get('nodo_laboratorio')
+                            if lab_historico:
+                                st.info(f"**🔬 Síntesis de Laboratorio:**\n{lab_historico}")
+                            
+        except Exception as e:
+            st.error(f"Falla en la recuperación de telemetría: {e}")
