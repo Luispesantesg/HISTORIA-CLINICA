@@ -7,6 +7,7 @@ import pandas as pd
 import fitz  # PyMuPDF
 import tempfile
 import os
+import json
 
 # ==========================================
 # 1. CONFIGURACIÓN DEL ENTORNO
@@ -272,61 +273,62 @@ with tab_ingreso:
         )
 
     # ==========================================
-    # NUEVO MÓDULO: INGESTA DE LABORATORIO (DISCO FÍSICO I/O + CONTROL MANUAL)
+    # NUEVO MÓDULO: INGESTA DE LABORATORIO (ESTRUCTURADO JSONB)
     # ==========================================
     st.markdown("---")
     with st.container(border=True):
-        st.subheader("4. Panel de Exámenes de Laboratorio e Imagen")
+        st.subheader("4. Panel Estructurado de Laboratorio")
         
         archivo_lab = st.file_uploader("Cargar reporte de laboratorio (Formato PDF exclusivo):", type=["pdf"], key=f"val_pdf_file_{fv}")
         
-        # Semilla de Memoria Aislada para el componente
-        key_resumen_lab = f"val_lab_resumen_{fv}"
-        if key_resumen_lab not in st.session_state:
-            st.session_state[key_resumen_lab] = ""
+        key_raw_lab = f"val_lab_raw_{fv}"
+        if key_raw_lab not in st.session_state:
+            st.session_state[key_raw_lab] = ""
 
-        # Terminal de Ejecución Manual
+        # Lógica de Extracción de PDF (Mantenida como Referencia)
         if archivo_lab is not None:
-            if st.button("⚙️ Ejecutar Extracción de Datos PDF", type="secondary"):
+            if st.button("⚙️ Ejecutar Extracción de Texto Base", type="secondary"):
                 with st.spinner("Procesando lectura física en disco duro..."):
                     ruta_fisica = ""
                     try:
-                        # Volcado físico a disco (Bypass del buffer virtual)
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                             tmp_file.write(archivo_lab.getvalue())
                             ruta_fisica = tmp_file.name
                         
-                        # Lectura nativa C++
                         doc = fitz.open(ruta_fisica)
-                        paginas = []
-                        for pagina in doc:
-                            texto = pagina.get_text()
-                            if texto:
-                                paginas.append(texto)
-                        
+                        paginas = [pagina.get_text() for pagina in doc if pagina.get_text()]
                         texto_crudo = "\n".join(paginas)
                         doc.close()
                         
                         if not texto_crudo.strip():
                             st.error("Diagnóstico: El archivo físico no contiene caracteres legibles.")
                         else:
-                            st.session_state[key_resumen_lab] = texto_crudo
-                            st.success("Protocolo exitoso: Telemetría capturada.")
-                            st.rerun() # Fuerza la actualización de la UI
+                            st.session_state[key_raw_lab] = texto_crudo
+                            st.success("Telemetría base capturada con éxito.")
+                            st.rerun()
                             
                     except Exception as e:
                         st.error(f"Falla crítica de I/O o lectura C++: {e}")
                     finally:
-                        # Recolección de basura obligatoria (Seguridad de servidor)
                         if ruta_fisica and os.path.exists(ruta_fisica):
                             os.remove(ruta_fisica)
 
-        # Renderizado del Componente Visual (Solo enlazado al key)
-        nodo_laboratorio = st.text_area(
-            "Síntesis de Laboratorio (Valores Críticos / Alterados):", 
-            height=150, 
-            help="Cargue un archivo y haga clic en 'Ejecutar Extracción' para poblar este campo.",
-            key=key_resumen_lab
+        # Panel Colapsable para Referencia Cruda
+        if st.session_state[key_raw_lab]:
+            with st.expander("👁️ Ver Datos Crudos Extraídos del PDF (Para transcripción)"):
+                st.text(st.session_state[key_raw_lab])
+
+        # Matriz de Datos Interactiva (st.data_editor)
+        st.markdown("**Matriz Analítica de Biomarcadores (Editable):**")
+        df_esquema_inicial = pd.DataFrame(columns=["Biomarcador", "Resultado", "Unidad", "Rango de Referencia"])
+        
+        df_lab_interactivo = st.data_editor(
+            df_esquema_inicial,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            key=f"editor_json_lab_{fv}",
+            help="Agregue las filas necesarias para registrar valores críticos o alterados. Esta tabla será indexada estructuralmente."
         )
 
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
@@ -338,6 +340,10 @@ with tab_ingreso:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
                 nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
+                
+                # Transformación de DataFrame a JSON (Diccionario) para Supabase
+                df_filtrado = df_lab_interactivo.dropna(how='all') # Elimina filas completamente vacías
+                matriz_lab_json = df_filtrado.to_dict(orient="records")
 
                 paciente_data = {
                     "id_paciente": id_paciente, "nombres": nombres, "edad": edad, "sexo": sexo,
@@ -351,7 +357,7 @@ with tab_ingreso:
                     "peso": peso_kg, "talla": talla_m,
                     "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, 
                     "cie_10": cie_10_final,
-                    "nodo_laboratorio": nodo_laboratorio
+                    "nodo_laboratorio": matriz_lab_json  # Inyección del Payload Estructurado
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
@@ -368,7 +374,7 @@ with tab_ingreso:
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Falla transaccional a nivel de base de datos: {e}. Verifique la existencia de la columna 'nodo_laboratorio'.")
+                st.error(f"Falla transaccional a nivel de base de datos: {e}. Verifique que la columna 'nodo_laboratorio' en Supabase soporte formato JSON o JSONB.")
 
 # ------------------------------------------
 # NODO B: LECTURA Y AUDITORÍA (QUERY + ANALÍTICA)
@@ -441,8 +447,6 @@ with tab_consulta:
                             peso_hist = evol.get('peso')
                             talla_hist = evol.get('talla')
                             str_peso = f"{peso_hist} kg" if peso_hist is not None and peso_hist > 0 else "N/A"
-                            str_talla = f"{talla_hist} m" if talla_hist is not None and talla_hist > 0 else "N/A"
-                            
                             st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')} | Peso: {str_peso} | Talla: {str_talla}")
                             
                             st.markdown("**Matriz SOAP y Complementarios:**")
@@ -451,9 +455,16 @@ with tab_consulta:
                             st.write(f"**A:** {evol.get('nodo_a', '')}")
                             st.write(f"**P:** {evol.get('nodo_p', '')}")
                             
+                            # Motor Analítico Compatible con JSON y Texto Heredado
                             lab_historico = evol.get('nodo_laboratorio')
                             if lab_historico:
-                                st.info(f"**🔬 Síntesis de Laboratorio:**\n{lab_historico}")
+                                st.markdown("**🔬 Síntesis Analítica de Laboratorio:**")
+                                if isinstance(lab_historico, list):
+                                    # Renderizado de JSONB a DataFrame
+                                    st.dataframe(pd.DataFrame(lab_historico), use_container_width=True, hide_index=True)
+                                else:
+                                    # Fallback para registros antiguos (String plano)
+                                    st.info(lab_historico)
                             
         except Exception as e:
             st.error(f"Falla en la recuperación de telemetría: {e}")
