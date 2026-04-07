@@ -4,14 +4,16 @@ from supabase import create_client, Client
 from fpdf import FPDF
 from datetime import datetime
 import pandas as pd
-import fitz  # NUEVO MOTOR: PyMuPDF (Sustituye a pdfplumber y a io)
+import fitz  # PyMuPDF
+import tempfile
+import os
 
 # ==========================================
 # 1. CONFIGURACIÓN DEL ENTORNO
 # ==========================================
 st.set_page_config(page_title="HCE - Medicina General", page_icon="⚕️", layout="wide")
 
-# Inicialización de la Semilla Dimensional
+# Inicialización de la Semilla Dimensional para Auto-Limpieza
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
@@ -270,45 +272,61 @@ with tab_ingreso:
         )
 
     # ==========================================
-    # NUEVO MÓDULO: INGESTA DE LABORATORIO (PyMuPDF)
+    # NUEVO MÓDULO: INGESTA DE LABORATORIO (DISCO FÍSICO I/O + CONTROL MANUAL)
     # ==========================================
     st.markdown("---")
     with st.container(border=True):
         st.subheader("4. Panel de Exámenes de Laboratorio e Imagen")
         
-        archivo_lab = st.file_uploader("Cargar reporte de laboratorio (Formato PDF exclusivo):", type=["pdf"], key=f"val_pdf_{fv}")
-        texto_extraido_lab = ""
+        archivo_lab = st.file_uploader("Cargar reporte de laboratorio (Formato PDF exclusivo):", type=["pdf"], key=f"val_pdf_file_{fv}")
         
-        if archivo_lab is not None:
-            with st.spinner("Iniciando motor de abstracción C++ (PyMuPDF)..."):
-                try:
-                    # Inyección directa de bytes al motor avanzado
-                    stream_bytes = archivo_lab.read()
-                    doc = fitz.open(stream=stream_bytes, filetype="pdf")
-                    
-                    paginas = []
-                    # Extracción agresiva ignorando estructuras complejas
-                    for pagina in doc:
-                        texto = pagina.get_text()
-                        if texto:
-                            paginas.append(texto)
-                    
-                    texto_extraido_lab = "\n".join(paginas)
-                    
-                    if not texto_extraido_lab.strip():
-                        st.error("Falla Crítica de Compilación: El documento presenta un cifrado no resoluble o es una imagen plana oculta bajo una máscara PDF.")
-                    else:
-                        st.toast("Extracción de telemetría exitosa vía PyMuPDF.", icon="✅")
-                        
-                except Exception as e:
-                    st.error(f"Excepción de tiempo de ejecución en el análisis del archivo: {e}")
+        # Semilla de Memoria Aislada para el componente
+        key_resumen_lab = f"val_lab_resumen_{fv}"
+        if key_resumen_lab not in st.session_state:
+            st.session_state[key_resumen_lab] = ""
 
+        # Terminal de Ejecución Manual
+        if archivo_lab is not None:
+            if st.button("⚙️ Ejecutar Extracción de Datos PDF", type="secondary"):
+                with st.spinner("Procesando lectura física en disco duro..."):
+                    ruta_fisica = ""
+                    try:
+                        # Volcado físico a disco (Bypass del buffer virtual)
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                            tmp_file.write(archivo_lab.getvalue())
+                            ruta_fisica = tmp_file.name
+                        
+                        # Lectura nativa C++
+                        doc = fitz.open(ruta_fisica)
+                        paginas = []
+                        for pagina in doc:
+                            texto = pagina.get_text()
+                            if texto:
+                                paginas.append(texto)
+                        
+                        texto_crudo = "\n".join(paginas)
+                        doc.close()
+                        
+                        if not texto_crudo.strip():
+                            st.error("Diagnóstico: El archivo físico no contiene caracteres legibles.")
+                        else:
+                            st.session_state[key_resumen_lab] = texto_crudo
+                            st.success("Protocolo exitoso: Telemetría capturada.")
+                            st.rerun() # Fuerza la actualización de la UI
+                            
+                    except Exception as e:
+                        st.error(f"Falla crítica de I/O o lectura C++: {e}")
+                    finally:
+                        # Recolección de basura obligatoria (Seguridad de servidor)
+                        if ruta_fisica and os.path.exists(ruta_fisica):
+                            os.remove(ruta_fisica)
+
+        # Renderizado del Componente Visual (Solo enlazado al key)
         nodo_laboratorio = st.text_area(
             "Síntesis de Laboratorio (Valores Críticos / Alterados):", 
-            value=texto_extraido_lab,
             height=150, 
-            help="Edite el texto extraído y conserve únicamente los hallazgos patológicos o relevantes para la auditoría clínica.",
-            key=f"val_lab_resumen_{fv}"
+            help="Cargue un archivo y haga clic en 'Ejecutar Extracción' para poblar este campo.",
+            key=key_resumen_lab
         )
 
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
