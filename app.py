@@ -4,6 +4,7 @@ from supabase import create_client, Client
 from fpdf import FPDF
 from datetime import datetime
 import pandas as pd
+import pdfplumber
 
 # ==========================================
 # 1. CONFIGURACIÓN DEL ENTORNO
@@ -95,7 +96,6 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf = FPDF()
     pdf.add_page()
     
-    # Cabecera Documental
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
     pdf.set_font("Arial", 'B', 12)
@@ -105,7 +105,6 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.line(10, 35, 200, 35)
     pdf.ln(10)
     
-    # Fila 1: Fecha y Documento
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(30, 8, "Fecha:", border=0)
     pdf.set_font("Arial", '', 10)
@@ -116,7 +115,6 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 8, id_paciente, ln=True)
     
-    # Fila 2: Paciente y Edad
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(30, 8, "Paciente:", border=0)
     pdf.set_font("Arial", '', 10)
@@ -127,7 +125,6 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.set_font("Arial", '', 10)
     pdf.cell(0, 8, str(edad), ln=True)
     
-    # Línea separadora y Cuerpo Clínico
     pdf.line(10, 60, 200, 60)
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 12)
@@ -135,7 +132,6 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 8, plan_terapeutico)
     
-    # Zona de Firma Dinámica
     pdf.ln(30)
     pdf.line(60, pdf.get_y(), 150, pdf.get_y())
     pdf.set_font("Arial", 'B', 10)
@@ -144,14 +140,11 @@ def generar_receta_pdf(id_paciente, nombres, edad, fecha, plan_terapeutico, perf
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 5. LÓGICA REACTIVA Y CALLBACKS (NUEVO MOTOR)
+# 5. LÓGICA REACTIVA Y CALLBACKS
 # ==========================================
 def buscar_paciente_por_id():
-    """Ejecuta consulta a Supabase y auto-completa el formulario si el paciente existe."""
     fv = st.session_state.form_version
     key_id = f"val_id_{fv}"
-    
-    # Extraer el valor actual ingresado
     id_ingresado = st.session_state.get(key_id, "").strip()
     
     if id_ingresado:
@@ -159,13 +152,11 @@ def buscar_paciente_por_id():
             res = supabase.table("pacientes").select("*").eq("id_paciente", id_ingresado).execute()
             if res.data:
                 paciente = res.data[0]
-                # Modificación de la semilla de estado para inyectar datos
                 st.session_state[f"val_nombres_{fv}"] = paciente.get("nombres", "")
                 st.session_state[f"val_edad_{fv}"] = int(paciente.get("edad", 0))
                 st.session_state[f"val_app_{fv}"] = paciente.get("antecedentes_personales", "")
                 st.session_state[f"val_apf_{fv}"] = paciente.get("antecedentes_familiares", "")
                 
-                # Validación de catálogo de sexo para evitar desajustes en el selectbox
                 sexo_db = paciente.get("sexo", "Masculino")
                 if sexo_db in ["Masculino", "Femenino"]:
                     st.session_state[f"val_sexo_{fv}"] = sexo_db
@@ -187,14 +178,12 @@ st.markdown("---")
 tab_ingreso, tab_consulta = st.tabs(["📝 Ingreso y Síntesis Médica", "🔍 Auditoría Longitudinal del Paciente"])
 lista_cie10 = cargar_catalogo_cie10_csv()
 
-# Extracción de la Semilla de Versión
 fv = st.session_state.form_version
 
 # ------------------------------------------
-# NODO A: ESCRITURA Y EMISIÓN (HUD EN TIEMPO REAL)
+# NODO A: ESCRITURA Y EMISIÓN
 # ------------------------------------------
 with tab_ingreso:
-    
     if "pdf_reciente" in st.session_state:
         st.success(f"Protocolo Exitoso: Registro consolidado. Documento firmado por {st.session_state['medico_reciente']}.")
         st.download_button("📥 Descargar Receta Médica (PDF)", 
@@ -207,7 +196,6 @@ with tab_ingreso:
     st.subheader("1. Filiación y Antecedentes")
     col_fil_1, col_fil_2 = st.columns(2)
     with col_fil_1:
-        # Se integra el callback on_change
         id_paciente = st.text_input("Documento de Identidad (Obligatorio):", key=f"val_id_{fv}", on_change=buscar_paciente_por_id).strip()
         nombres = st.text_input("Apellidos y Nombres:", key=f"val_nombres_{fv}").strip()
         sexo = st.selectbox("Sexo Biológico:", ["Masculino", "Femenino"], key=f"val_sexo_{fv}")
@@ -222,14 +210,12 @@ with tab_ingreso:
     
     with col_v1: 
         pa = st.text_input("PA (mmHg):", placeholder="120/80", key=f"val_pa_{fv}").strip()
-        # Motor de Análisis Dinámico de PAM
         if pa and "/" in pa:
             try:
                 sys_str, dia_str = pa.split("/")
                 sys_val, dia_val = int(sys_str), int(dia_str)
                 pam_val = round((sys_val + 2 * dia_val) / 3, 1)
                 
-                # Criterio normativo JNC 8 / AHA
                 if sys_val >= 140 or dia_val >= 90:
                     st.error(f"PAM: {pam_val} mmHg (Riesgo HTA)")
                 else:
@@ -247,8 +233,8 @@ with tab_ingreso:
         imc_val = round(peso_kg / (talla_m ** 2), 2)
         
         if edad < 19:
-            st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada. Requiere validación manual en curvas de crecimiento OMS según edad y sexo.")
-            imc_texto_db = f"[Antropometría] IMC: {imc_val} - Riesgo Metabólico: Paciente pediátrico (Validar en curvas OMS)"
+            st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada. Requiere validación manual.")
+            imc_texto_db = f"[Antropometría] IMC: {imc_val} (Pediátrico)"
         else:
             if imc_val < 18.5: estrato, color = "Bajo peso", "🔵"
             elif imc_val < 24.9: estrato, color = "Normopeso", "🟢"
@@ -262,7 +248,6 @@ with tab_ingreso:
 
     st.markdown("---")
     
-    # Contenedor visual estructurado para matriz clínica
     with st.container(border=True):
         st.subheader("3. Matriz Clínica Estructurada")
         motivo_consulta = st.text_input("Motivo de Consulta:", key=f"val_motivo_{fv}").strip()
@@ -284,11 +269,39 @@ with tab_ingreso:
             key=f"val_cie10_{fv}"
         )
 
+    # ==========================================
+    # NUEVO MÓDULO: INGESTA DE LABORATORIO (PDF)
+    # ==========================================
+    st.markdown("---")
+    with st.container(border=True):
+        st.subheader("4. Panel de Exámenes de Laboratorio e Imagen")
+        
+        archivo_lab = st.file_uploader("Cargar reporte de laboratorio (Formato PDF exclusivo):", type=["pdf"], key=f"val_pdf_{fv}")
+        texto_extraido_lab = ""
+        
+        if archivo_lab is not None:
+            with st.spinner("Ejecutando motor de extracción de datos OCR..."):
+                try:
+                    with pdfplumber.open(archivo_lab) as pdf:
+                        paginas = [pagina.extract_text() for pagina in pdf.pages if pagina.extract_text()]
+                        texto_extraido_lab = "\n".join(paginas)
+                    st.toast("Extracción de telemetría de laboratorio exitosa.", icon="✅")
+                except Exception as e:
+                    st.error(f"Falla crítica en el motor de lectura PDF. Archivo corrupto o no compatible: {e}")
+
+        nodo_laboratorio = st.text_area(
+            "Síntesis de Laboratorio (Valores Críticos / Alterados):", 
+            value=texto_extraido_lab,
+            height=150, 
+            help="Edite el texto extraído y conserve únicamente los hallazgos patológicos o relevantes para la auditoría clínica.",
+            key=f"val_lab_resumen_{fv}"
+        )
+
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", use_container_width=True)
 
     if submitted:
         if not id_paciente or not nodo_p:
-            st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento (P) son mandatorios para la ejecución del bloque.")
+            st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento (P) son mandatorios.")
         else:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
@@ -300,11 +313,14 @@ with tab_ingreso:
                 }
                 supabase.table("pacientes").upsert(paciente_data).execute()
 
+                # Se incluye nodo_laboratorio en la inserción
                 evolucion_data = {
                     "id_paciente": id_paciente, "motivo_consulta": motivo_consulta, "enfermedad_actual": enfermedad_actual,
                     "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
                     "peso": peso_kg, "talla": talla_m,
-                    "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, "cie_10": cie_10_final
+                    "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, 
+                    "cie_10": cie_10_final,
+                    "nodo_laboratorio": nodo_laboratorio
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
@@ -321,7 +337,7 @@ with tab_ingreso:
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Falla transaccional a nivel de base de datos: {e}")
+                st.error(f"Falla transaccional a nivel de base de datos: {e}. Verifique que la columna 'nodo_laboratorio' exista en Supabase.")
 
 # ------------------------------------------
 # NODO B: LECTURA Y AUDITORÍA (QUERY + ANALÍTICA)
@@ -358,9 +374,6 @@ with tab_consulta:
                 if not res_evol.data:
                     st.info("No existen evoluciones clínicas documentadas para este paciente.")
                 else:
-                    # ==========================================
-                    # MOTOR DE VIGILANCIA EPIDEMIOLÓGICA (CURVA PONDERAL Y MÉTRICAS)
-                    # ==========================================
                     df_evol = pd.DataFrame(res_evol.data)
                     
                     if not df_evol.empty and 'peso' in df_evol.columns:
@@ -371,11 +384,9 @@ with tab_consulta:
                         
                         if not df_peso.empty and len(df_peso) > 1:
                             st.markdown("### 📈 Monitor Epidemiológico: Fluctuación Ponderal")
-                            
                             df_peso['Fecha'] = df_peso['fecha_dt'].dt.strftime('%d/%m/%Y')
                             df_peso = df_peso.set_index('Fecha')
                             
-                            # Cálculo de Delta Ponderal
                             peso_actual = float(df_peso['peso'].iloc[-1])
                             peso_previo = float(df_peso['peso'].iloc[-2])
                             delta_peso = round(peso_actual - peso_previo, 2)
@@ -385,7 +396,6 @@ with tab_consulta:
                                 st.metric(label="Peso (Último Control)", value=f"{peso_actual} kg", delta=f"{delta_peso} kg", delta_color="inverse")
                             with col_chart:
                                 st.line_chart(df_peso['peso'])
-                            
                             st.markdown("---")
 
                     st.markdown("### Línea de Tiempo Clínica (Controles Previos)")
@@ -404,11 +414,16 @@ with tab_consulta:
                             
                             st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')} | Peso: {str_peso} | Talla: {str_talla}")
                             
-                            st.markdown("**Matriz SOAP:**")
+                            st.markdown("**Matriz SOAP y Complementarios:**")
                             st.write(f"**S:** {evol.get('nodo_s', '')}")
                             st.write(f"**O:** {evol.get('nodo_o', '')}")
                             st.write(f"**A:** {evol.get('nodo_a', '')}")
                             st.write(f"**P:** {evol.get('nodo_p', '')}")
+                            
+                            # Renderizado del módulo de laboratorio en el histórico
+                            lab_historico = evol.get('nodo_laboratorio')
+                            if lab_historico:
+                                st.info(f"**🔬 Síntesis de Laboratorio:**\n{lab_historico}")
                             
         except Exception as e:
             st.error(f"Falla en la recuperación de telemetría: {e}")
