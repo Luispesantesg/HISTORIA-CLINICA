@@ -1,3 +1,53 @@
+from fpdf import FPDF
+
+def generar_receta_pdf(id_paciente: str, nombres: str, edad: int, fecha: str, plan_terapeutico: str, perfil_medico: dict) -> bytes:
+    """Renderiza el documento legal de Receta Médica Estándar."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, f"{perfil_medico['nombre']} - {perfil_medico['especialidad']}", ln=True, align='C')
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 5, perfil_medico['subtitulo'], ln=True, align='C')
+    pdf.line(10, 35, 200, 35)
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(30, 8, "Fecha:", border=0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(50, 8, fecha, ln=False)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(32, 8, "ID/Documento:", border=0) 
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 8, id_paciente, ln=True)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(30, 8, "Paciente:", border=0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(100, 8, nombres, ln=False)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(15, 8, "Edad:", border=0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 8, str(edad), ln=True)
+    
+    pdf.line(10, 60, 200, 60)
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "Rp. / Indicaciones:", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.multi_cell(0, 8, plan_terapeutico)
+    
+    pdf.ln(30)
+    pdf.line(60, pdf.get_y(), 150, pdf.get_y())
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
+    
+    return bytes(pdf.output())
+
+
 def generar_certificado_excel_pdf(datos: dict) -> bytes:
     """Renderiza la matriz de Aptitud Ocupacional simulando Excel usando geometría pura nativa."""
     pdf = FPDF(orientation='P', unit='mm', format='A4')
@@ -114,10 +164,3 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     pdf.line(130, y, 180, y)
     
     pdf.cell(95, 5, "FIRMA Y SELLO MEDICO", ln=False, align='C')
-    pdf.cell(95, 5, "FIRMA O HUELLA DEL TRABAJADOR", ln=True, align='C')
-    
-    pdf.set_font("Arial", '', 8)
-    pdf.cell(95, 5, datos.get('medico_nombre', ''), ln=False, align='C')
-    pdf.cell(95, 5, f"CI: {datos.get('id_paciente', '')}", ln=True, align='C')
-    
-    return bytes(pdf.output())
