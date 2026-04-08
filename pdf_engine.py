@@ -1,6 +1,52 @@
 from fpdf import FPDF
 
-# ... (Mantenga aquí su función generar_receta_pdf sin cambios) ...
+def generar_receta_pdf(id_paciente: str, nombres: str, edad: int, fecha: str, plan_terapeutico: str, perfil_medico: dict) -> bytes:
+    """Renderiza el documento legal de Receta Médica Estándar."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "RECETA MEDICA", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, f"{perfil_medico['nombre']} - {perfil_medico['especialidad']}", ln=True, align='C')
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(0, 5, perfil_medico['subtitulo'], ln=True, align='C')
+    pdf.line(10, 35, 200, 35)
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(30, 8, "Fecha:", border=0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(50, 8, fecha, ln=False)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(32, 8, "ID/Documento:", border=0) 
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 8, id_paciente, ln=True)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(30, 8, "Paciente:", border=0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(100, 8, nombres, ln=False)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(15, 8, "Edad:", border=0)
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 8, str(edad), ln=True)
+    
+    pdf.line(10, 60, 200, 60)
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "Rp. / Indicaciones:", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.multi_cell(0, 8, plan_terapeutico)
+    
+    pdf.ln(30)
+    pdf.line(60, pdf.get_y(), 150, pdf.get_y())
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
+    
+    return pdf.output(dest='S').encode('latin-1', 'replace')
+
 
 def generar_certificado_excel_pdf(datos: dict) -> bytes:
     """Renderiza la matriz de Aptitud Ocupacional simulando Excel usando geometría pura nativa."""
@@ -80,11 +126,11 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     header_gris(" C. APTITUD MEDICA PARA EL TRABAJO")
     
     pdf.set_font("Arial", '', 9)
-    pdf.multi_cell(0, 6, " Después de la valoración médica ocupacional se certifica que la persona en mención es calificada como:", border="LTR")
+    pdf.multi_cell(0, 6, " Despues de la valoracion medica ocupacional se certifica que la persona en mencion es calificada como:", border="LTR")
     
     dic = datos.get('dictamen', '')
     pdf.set_font("Arial", 'B', 9)
-    aptitudes = f"[{'X' if dic=='APTO' else ' '}] APTO     [{'X' if dic=='APTO EN OBSERVACIÓN' else ' '}] APTO EN OBSERV.     [{'X' if dic=='APTO CON LIMITACIONES' else ' '}] APTO CON LIMIT.     [{'X' if dic=='NO APTO' else ' '}] NO APTO"
+    aptitudes = f"[{'X' if dic=='APTO' else ' '}] APTO     [{'X' if dic=='APTO EN OBSERVACION' else ' '}] APTO EN OBSERV.     [{'X' if dic=='APTO CON LIMITACIONES' else ' '}] APTO CON LIMIT.     [{'X' if dic=='NO APTO' else ' '}] NO APTO"
     pdf.cell(0, 8, aptitudes, border="LBR", align='C', ln=True)
     
     pdf.ln(5)
@@ -98,7 +144,7 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     # Dejamos espacio en blanco para que el cuadro tenga altura de bloque de texto
     pdf.multi_cell(0, 5, " " + datos.get('observaciones', '') + "\n\n\n", border="LTR")
     
-    legal_text = "Con este documento certifico que el trabajador se ha sometido a la evaluación médica requerida para el puesto laboral y se le ha informado sobre los riesgos relacionados con el trabajo emitiendo recomendaciones relacionadas con su estado de salud. La presente certificación se expide con base en el formulario de Evaluación Ocupacional, el cual tiene carácter confidencial."
+    legal_text = "Con este documento certifico que el trabajador se ha sometido a la evaluacion medica requerida para el puesto laboral y se le ha informado sobre los riesgos relacionados con el trabajo emitiendo recomendaciones relacionadas con su estado de salud. La presente certificacion se expide con base en el formulario de Evaluacion Ocupacional, el cual tiene caracter confidencial."
     pdf.set_font("Arial", '', 7)
     pdf.multi_cell(0, 4, legal_text, border="LBR")
     
