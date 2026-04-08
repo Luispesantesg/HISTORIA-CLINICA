@@ -1,0 +1,5 @@
+libfreetype6-dev
+libjpeg-dev
+zlib1g-dev
+mupdf
+mupdf-tools
