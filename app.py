@@ -1,14 +1,13 @@
 import streamlit as st
 from datetime import datetime
 import pandas as pd
-import fitz  # PyMuPDF
+import fitz  
 import tempfile
 import os
 
-# Importaciones de la Arquitectura Modular
 from auth import verificar_autenticacion
 from database import supabase, cargar_catalogo_cie10_csv, PERFILES_MEDICOS
-from pdf_engine import generar_receta_pdf, generar_certificado_aptitud_pdf
+from pdf_engine import generar_receta_pdf, generar_certificado_excel_pdf
 from nlp_parser import estructurar_telemetria_laboratorio
 
 # ==========================================
@@ -19,7 +18,6 @@ st.set_page_config(page_title="HCE - Medicina General y Ocupacional", page_icon=
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
-# Barrera de Seguridad (Módulo Auth)
 if not verificar_autenticacion():
     st.stop()
 
@@ -59,11 +57,10 @@ perfil_activo = PERFILES_MEDICOS.get(usuario_actual, PERFILES_MEDICOS["luis_pesa
 st.caption(f"Sesión activa: {perfil_activo['nombre']}")
 st.markdown("---")
 
-# Expansión de la Topología: Se añade el tercer nodo
 tab_ingreso, tab_consulta, tab_ocupacional = st.tabs([
     "📝 Medicina General", 
     "🔍 Auditoría Longitudinal",
-    "⚙️ Salud Ocupacional"
+    "⚙️ Salud Ocupacional (Formatos)"
 ])
 
 lista_cie10 = cargar_catalogo_cie10_csv()
@@ -103,11 +100,8 @@ with tab_ingreso:
                 sys_str, dia_str = pa.split("/")
                 sys_val, dia_val = int(sys_str), int(dia_str)
                 pam_val = round((sys_val + 2 * dia_val) / 3, 1)
-                
-                if sys_val >= 140 or dia_val >= 90:
-                    st.error(f"PAM: {pam_val} mmHg (Riesgo HTA)")
-                else:
-                    st.success(f"PAM: {pam_val} mmHg")
+                if sys_val >= 140 or dia_val >= 90: st.error(f"PAM: {pam_val} mmHg (Riesgo HTA)")
+                else: st.success(f"PAM: {pam_val} mmHg")
             except ValueError:
                 st.warning("Formato PA inválido")
                 
@@ -119,19 +113,17 @@ with tab_ingreso:
     imc_texto_db = ""
     if talla_m > 0 and peso_kg > 0:
         imc_val = round(peso_kg / (talla_m ** 2), 2)
-        
         if edad < 19:
-            st.warning(f"⚠️ **Alerta Pediátrica:** El IMC calculado es **{imc_val}**. La estratificación estática está deshabilitada.")
+            st.warning(f"⚠️ **Alerta Pediátrica:** IMC {imc_val}")
             imc_texto_db = f"[Antropometría] IMC: {imc_val} (Pediátrico)"
         else:
-            if imc_val < 18.5: estrato, color = "Bajo peso", "🔵"
-            elif imc_val < 24.9: estrato, color = "Normopeso", "🟢"
-            elif imc_val < 29.9: estrato, color = "Sobrepeso", "🟡"
-            elif imc_val < 34.9: estrato, color = "Obesidad I", "🟠"
-            elif imc_val < 39.9: estrato, color = "Obesidad II", "🔴"
-            else: estrato, color = "Obesidad III", "🟣"
-            
-            st.info(f"{color} **Radar Antropométrico:** IMC de **{imc_val}** - Estratificación OMS: **{estrato}**")
+            if imc_val < 18.5: estrato = "Bajo peso"
+            elif imc_val < 24.9: estrato = "Normopeso"
+            elif imc_val < 29.9: estrato = "Sobrepeso"
+            elif imc_val < 34.9: estrato = "Obesidad I"
+            elif imc_val < 39.9: estrato = "Obesidad II"
+            else: estrato = "Obesidad III"
+            st.info(f"IMC de **{imc_val}** - Estratificación: **{estrato}**")
             imc_texto_db = f"[Antropometría] IMC: {imc_val} ({estrato})"
 
     st.markdown("---")
@@ -149,18 +141,11 @@ with tab_ingreso:
             nodo_a = st.text_area("Apreciación (A):", height=120, key=f"val_a_{fv}").strip()
             nodo_p = st.text_area("Plan de Tratamiento / Receta (P):", height=120, key=f"val_p_{fv}").strip()
             
-        cie_10_seleccion = st.selectbox(
-            "Diagnóstico CIE-10 Principal (Normativa Técnica):", 
-            options=lista_cie10, 
-            index=None,
-            placeholder="Haga clic aquí y escriba el código o patología para filtrar...",
-            key=f"val_cie10_{fv}"
-        )
+        cie_10_seleccion = st.selectbox("Diagnóstico CIE-10 Principal:", options=lista_cie10, index=None, key=f"val_cie10_{fv}")
 
     st.markdown("---")
     with st.container(border=True):
         st.subheader("4. Panel Estructurado de Laboratorio asistido por IA")
-        
         archivo_lab = st.file_uploader("Cargar reporte de laboratorio (Formato PDF exclusivo):", type=["pdf"], key=f"val_pdf_file_{fv}")
         
         key_df_lab = f"df_lab_state_{fv}"
@@ -169,7 +154,7 @@ with tab_ingreso:
 
         if archivo_lab is not None:
             if st.button("⚙️ Ejecutar Extracción Automatizada (NLP)", type="secondary"):
-                with st.spinner("Conectando con el motor de inferencia clínica..."):
+                with st.spinner("Conectando con el motor de inferencia..."):
                     ruta_fisica = ""
                     try:
                         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
@@ -186,36 +171,26 @@ with tab_ingreso:
                         else:
                             df_generado = estructurar_telemetria_laboratorio(texto_crudo)
                             st.session_state[key_df_lab] = df_generado
-                            st.success("Protocolo NLP Exitoso: Matriz de datos estructurada e inyectada.")
+                            st.success("Protocolo NLP Exitoso.")
                             st.rerun()
-                            
                     except Exception as e:
-                        st.error(f"Falla en el pipeline de procesamiento: {e}")
+                        st.error(f"Falla en el pipeline: {e}")
                     finally:
                         if ruta_fisica and os.path.exists(ruta_fisica):
                             os.remove(ruta_fisica)
 
-        st.markdown("**Matriz Analítica de Biomarcadores (Editable):**")
-        st.caption("ℹ️ Revise los datos extraídos por la IA. Puede modificar, agregar o eliminar filas según su criterio clínico antes de guardar.")
-        
-        df_lab_interactivo = st.data_editor(
-            st.session_state[key_df_lab],
-            num_rows="dynamic",
-            width='stretch',
-            hide_index=True,
-            key=f"editor_json_lab_{fv}"
-        )
+        st.caption("ℹ️ Revise los datos extraídos por la IA.")
+        df_lab_interactivo = st.data_editor(st.session_state[key_df_lab], num_rows="dynamic", width='stretch', hide_index=True, key=f"editor_json_lab_{fv}")
 
     submitted = st.button("Guardar Historia y Procesar Receta", type="primary", width='stretch')
 
     if submitted:
         if not id_paciente or not nodo_p:
-            st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento (P) son mandatorios.")
+            st.error("Error Lógico: El Documento de Identidad y el Plan de Tratamiento son mandatorios.")
         else:
             try:
                 cie_10_final = cie_10_seleccion if cie_10_seleccion else "No especificado"
                 nodo_o_final = f"{imc_texto_db}\n{nodo_o}" if imc_texto_db else nodo_o
-                
                 df_filtrado = df_lab_interactivo.dropna(how='all')
                 matriz_lab_json = df_filtrado.to_dict(orient="records")
 
@@ -230,239 +205,158 @@ with tab_ingreso:
                     "presion_arterial": pa, "frecuencia_cardiaca": fc, "temperatura": temp,
                     "peso": float(peso_kg), "talla": float(talla_m),
                     "nodo_s": nodo_s, "nodo_o": nodo_o_final, "nodo_a": nodo_a, "nodo_p": nodo_p, 
-                    "cie_10": cie_10_final,
-                    "nodo_laboratorio": matriz_lab_json 
+                    "cie_10": cie_10_final, "nodo_laboratorio": matriz_lab_json 
                 }
                 supabase.table("evoluciones").insert(evolucion_data).execute()
                 
                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
                 nombres_impresion = nombres if nombres else "Paciente No Registrado"
-                
                 pdf_bytes = generar_receta_pdf(id_paciente, nombres_impresion, edad, fecha_actual, nodo_p, perfil_activo)
                 
                 st.session_state["pdf_reciente"] = pdf_bytes
                 st.session_state["nombre_pdf_reciente"] = f"Receta_{id_paciente}.pdf"
                 st.session_state["medico_reciente"] = perfil_activo['nombre']
-                
                 st.session_state.form_version += 1
                 st.rerun()
-
             except Exception as e:
-                st.error(f"Falla transaccional a nivel de base de datos: {e}")
+                st.error(f"Falla transaccional: {e}")
 
 # ------------------------------------------
 # NODO B: LECTURA Y AUDITORÍA (QUERY + ANALÍTICA)
 # ------------------------------------------
 with tab_consulta:
-    st.subheader("Motor de Búsqueda y Análisis Clínico")
-    
+    st.subheader("Motor de Búsqueda Clínico")
     col_busqueda, col_vacia = st.columns([1, 2])
     with col_busqueda:
         busqueda_id = st.text_input("Ingrese el Documento del Paciente:").strip()
-        btn_buscar = st.button("Ejecutar Extracción de Datos", type="primary", width='stretch')
+        btn_buscar = st.button("Ejecutar Extracción", type="primary", width='stretch')
 
     if btn_buscar and busqueda_id:
         try:
             res_paciente = supabase.table("pacientes").select("*").eq("id_paciente", busqueda_id).execute()
-            
             if not res_paciente.data:
-                st.warning("El Documento ingresado no posee registros en la base de datos central.")
+                st.warning("El Documento ingresado no posee registros.")
             else:
                 paciente = res_paciente.data[0]
-                st.markdown("### Filiación y Perfil de Riesgo")
                 col_info1, col_info2 = st.columns(2)
-                
                 with col_info1:
-                    st.info(f"**Paciente:** {paciente.get('nombres', 'N/A')}\n\n**Edad:** {paciente.get('edad', 'N/A')} años\n\n**Sexo Biológico:** {paciente.get('sexo', 'N/A')}")
+                    st.info(f"**Paciente:** {paciente.get('nombres', 'N/A')}\n\n**Edad:** {paciente.get('edad', 'N/A')} años")
                 with col_info2:
                     st.error(f"**APP:** {paciente.get('antecedentes_personales', 'Sin registros')}")
-                    st.warning(f"**APF:** {paciente.get('antecedentes_familiares', 'Sin registros')}")
                 
                 st.markdown("---")
-                
-                # ==========================================
-                # AUDITORÍA 1: MEDICINA GENERAL
-                # ==========================================
-                st.markdown("### 🏥 Historial Clínico Integral")
                 res_evol = supabase.table("evoluciones").select("*").eq("id_paciente", busqueda_id).order("fecha", desc=True).execute()
                 
                 if not res_evol.data:
-                    st.info("No existen evoluciones clínicas documentadas para este paciente.")
+                    st.info("No existen evoluciones clínicas documentadas.")
                 else:
-                    df_evol = pd.DataFrame(res_evol.data)
-                    
-                    # Motor de Fluctuación Ponderal
-                    if not df_evol.empty and 'peso' in df_evol.columns:
-                        df_evol['fecha_dt'] = pd.to_datetime(df_evol['fecha'])
-                        df_evol_sorted = df_evol.sort_values('fecha_dt')
-                        df_peso = df_evol_sorted[df_evol_sorted['peso'] > 0][['fecha_dt', 'peso']]
-                        
-                        if not df_peso.empty and len(df_peso) > 1:
-                            st.markdown("#### 📈 Monitor Epidemiológico: Fluctuación Ponderal")
-                            df_peso['Fecha'] = df_peso['fecha_dt'].dt.strftime('%d/%m/%Y')
-                            df_peso = df_peso.set_index('Fecha')
-                            
-                            peso_actual = float(df_peso['peso'].iloc[-1])
-                            peso_previo = float(df_peso['peso'].iloc[-2])
-                            delta_peso = round(peso_actual - peso_previo, 2)
-                            
-                            col_metric, col_chart = st.columns([1, 3])
-                            with col_metric:
-                                st.metric(label="Peso (Último Control)", value=f"{peso_actual} kg", delta=f"{delta_peso} kg", delta_color="inverse")
-                            with col_chart:
-                                st.line_chart(df_peso['peso'])
-                            st.markdown("---")
-
-                    st.markdown("#### Línea de Tiempo Clínica (Controles Previos)")
+                    st.markdown("#### Línea de Tiempo Clínica")
                     for evol in res_evol.data:
                         raw_date = evol.get("fecha", "")
                         fmt_date = raw_date[:10] if raw_date else "Fecha desconocida"
-                        
-                        with st.expander(f"🗓️ Control: {fmt_date} | Motivo: {evol.get('motivo_consulta', 'No especificado')} | CIE-10: {evol.get('cie_10', 'N/A')}"):
+                        with st.expander(f"🗓️ Control: {fmt_date} | Motivo: {evol.get('motivo_consulta', 'N/A')}"):
                             st.write(f"**Enfermedad Actual:** {evol.get('enfermedad_actual', 'N/A')}")
-                            st.markdown("**Triaje Vital:**")
-                            
-                            peso_hist = evol.get('peso')
-                            talla_hist = evol.get('talla')
-                            
-                            str_peso = f"{peso_hist} kg" if peso_hist is not None and peso_hist > 0 else "N/A"
-                            str_talla = f"{talla_hist} m" if talla_hist is not None and talla_hist > 0 else "N/A"
-                            
-                            st.code(f"PA: {evol.get('presion_arterial','N/A')} | FC: {evol.get('frecuencia_cardiaca','N/A')} | Temp: {evol.get('temperatura','N/A')} | Peso: {str_peso} | Talla: {str_talla}")
-                            
-                            st.markdown("**Matriz SOAP y Complementarios:**")
-                            st.write(f"**S:** {evol.get('nodo_s', '')}")
-                            st.write(f"**O:** {evol.get('nodo_o', '')}")
-                            st.write(f"**A:** {evol.get('nodo_a', '')}")
-                            st.write(f"**P:** {evol.get('nodo_p', '')}")
-                            
+                            st.write(f"**S:** {evol.get('nodo_s', '')}\n\n**O:** {evol.get('nodo_o', '')}\n\n**A:** {evol.get('nodo_a', '')}\n\n**P:** {evol.get('nodo_p', '')}")
                             lab_historico = evol.get('nodo_laboratorio')
-                            if lab_historico:
-                                st.markdown("**🔬 Síntesis Analítica de Laboratorio:**")
-                                if isinstance(lab_historico, list):
-                                    st.dataframe(pd.DataFrame(lab_historico), width='stretch', hide_index=True)
-                                else:
-                                    st.info(lab_historico)
-
-                st.markdown("---")
+                            if isinstance(lab_historico, list):
+                                st.dataframe(pd.DataFrame(lab_historico), width='stretch', hide_index=True)
                 
-                # ==========================================
-                # AUDITORÍA 2: SALUD OCUPACIONAL
-                # ==========================================
+                st.markdown("---")
                 st.markdown("### ⚙️ Historial de Salud Ocupacional")
                 res_oc = supabase.table("evaluaciones_ocupacionales").select("*").eq("id_paciente", busqueda_id).order("fecha", desc=True).execute()
-                
                 if not res_oc.data:
-                    st.info("No existen evaluaciones de aptitud documentadas para este empleado.")
+                    st.info("No existen evaluaciones de aptitud documentadas.")
                 else:
-                    st.markdown("#### Línea de Tiempo de Aptitud Laboral")
                     for eval_oc in res_oc.data:
                         raw_date_oc = eval_oc.get("fecha", "")
                         fmt_date_oc = raw_date_oc[:10] if raw_date_oc else "Fecha desconocida"
-                        dictamen_str = eval_oc.get('dictamen', 'N/A')
-                        cargo_str = eval_oc.get('cargo', 'N/A')
-                        
-                        with st.expander(f"👷 Evaluación: {fmt_date_oc} | Cargo: {cargo_str} | Dictamen: {dictamen_str}"):
-                            st.markdown("**Matriz de Exposición a Riesgos:**")
-                            col_r1, col_r2 = st.columns(2)
-                            with col_r1:
-                                f_list = eval_oc.get('riesgos_fisicos', [])
-                                e_list = eval_oc.get('riesgos_ergonomicos', [])
-                                st.write(f"**Físicos:** {', '.join(f_list) if isinstance(f_list, list) and f_list else 'Ninguno'}")
-                                st.write(f"**Ergonómicos:** {', '.join(e_list) if isinstance(e_list, list) and e_list else 'Ninguno'}")
-                            with col_r2:
-                                b_list = eval_oc.get('riesgos_biologicos', [])
-                                q_list = eval_oc.get('riesgos_quimicos', [])
-                                st.write(f"**Biológicos:** {', '.join(b_list) if isinstance(b_list, list) and b_list else 'Ninguno'}")
-                                st.write(f"**Químicos:** {', '.join(q_list) if isinstance(q_list, list) and q_list else 'Ninguno'}")
-                            
-                            st.markdown("**Resolución Médica:**")
-                            st.code(f"Uso EPP Estandarizado: {eval_oc.get('uso_epp', 'N/A')} | Dictamen Final: {dictamen_str}")
-                            st.write(f"**Observaciones:** {eval_oc.get('observaciones', 'Sin observaciones adicionales.')}")
+                        with st.expander(f"👷 Evaluación: {fmt_date_oc} | Cargo: {eval_oc.get('cargo', 'N/A')} | Dictamen: {eval_oc.get('dictamen', 'N/A')}"):
+                            st.write(f"**Observaciones:** {eval_oc.get('observaciones', 'Ninguna')}")
 
         except Exception as e:
-            st.error(f"Falla crítica en la recuperación de telemetría de auditoría: {e}")# ------------------------------------------
-# NODO C: SALUD OCUPACIONAL
+            st.error(f"Falla crítica: {e}")
+
+# ------------------------------------------
+# NODO C: SALUD OCUPACIONAL (RENDER TABULAR HTML)
 # ------------------------------------------
 with tab_ocupacional:
     if "pdf_ocupacional_reciente" in st.session_state:
-        st.success("Protocolo Exitoso: Matriz ocupacional registrada y Certificado de Aptitud emitido.")
-        st.download_button("📥 Descargar Certificado de Aptitud (PDF)",
+        st.success("Protocolo Exitoso: Certificado de Aptitud Normativo emitido.")
+        st.download_button("📥 Descargar Formato Excel (PDF)",
                            data=st.session_state["pdf_ocupacional_reciente"],
                            file_name=st.session_state["nombre_pdf_ocupacional_reciente"],
                            mime="application/pdf",
                            key=f"btn_dw_ocup_{fv}")
         st.markdown("---")
 
-    st.subheader("1. Identificación del Empleado")
-    col_oc_1, col_oc_2 = st.columns(2)
-    with col_oc_1:
-        # Recuperamos datos del estado si ya se buscaron en la Pestaña 1
+    st.subheader("Generador de Certificado Ocupacional (Formato Matriz)")
+    
+    with st.container(border=True):
+        st.markdown("**A. Datos del Establecimiento**")
+        col_oc_1, col_oc_2, col_oc_3 = st.columns(3)
+        institucion_oc = col_oc_1.text_input("Institución del Sistema:", value="MSP", key=f"val_inst_{fv}").strip()
+        ruc_oc = col_oc_2.text_input("RUC:", key=f"val_ruc_{fv}").strip()
+        ciiu_oc = col_oc_3.text_input("CIIU:", key=f"val_ciiu_{fv}").strip()
+        centro_trabajo_oc = st.text_input("Establecimiento / Centro de Trabajo:", key=f"val_centro_{fv}").strip()
+
+    with st.container(border=True):
+        st.markdown("**B. Datos del Empleado**")
         id_pac_oc_val = st.session_state.get(f"val_id_{fv}", "")
         nom_oc_val = st.session_state.get(f"val_nombres_{fv}", "")
         
-        id_paciente_oc = st.text_input("Documento de Identidad:", value=id_pac_oc_val, key=f"val_id_oc_{fv}").strip()
-        nombres_oc = st.text_input("Apellidos y Nombres:", value=nom_oc_val, key=f"val_nom_oc_{fv}").strip()
-    with col_oc_2:
-        edad_oc_val = st.session_state.get(f"val_edad_{fv}", 0)
-        edad_oc = st.number_input("Edad (Años):", min_value=0, max_value=120, step=1, value=edad_oc_val, key=f"val_edad_oc_{fv}")
+        col_ne_1, col_ne_2 = st.columns(2)
+        id_paciente_oc = col_ne_1.text_input("Identificación (CI):", value=id_pac_oc_val, key=f"val_id_oc_{fv}").strip()
+        nombres_oc = col_ne_2.text_input("Apellidos y Nombres:", value=nom_oc_val, key=f"val_nom_oc_{fv}").strip()
         cargo_oc = st.text_input("Puesto de Trabajo / Cargo (Obligatorio):", key=f"val_cargo_oc_{fv}").strip()
 
-    st.markdown("---")
-    st.subheader("2. Matriz de Exposición a Riesgos")
-    col_r1, col_r2 = st.columns(2)
-    with col_r1:
-        r_fisicos = st.multiselect("Riesgos Físicos:", ["Ruido", "Vibración", "Radiación Ionizante", "Radiación No Ionizante", "Iluminación Deficiente", "Temperaturas Extremas", "Estrés Térmico"], key=f"val_rf_{fv}")
-        r_ergonomicos = st.multiselect("Riesgos Ergonómicos:", ["Levantamiento Manual de Cargas", "Movimientos Repetitivos", "Posturas Forzadas", "Pantallas de Visualización de Datos (PVD)"], key=f"val_re_{fv}")
-    with col_r2:
-        r_biologicos = st.multiselect("Riesgos Biológicos:", ["Virus", "Bacterias", "Hongos", "Fluidos Corporales", "Vectores"], key=f"val_rb_{fv}")
-        r_quimicos = st.multiselect("Riesgos Químicos:", ["Polvos", "Gases", "Vapores", "Humos Metálicos", "Sustancias Tóxicas"], key=f"val_rq_{fv}")
+    with st.container(border=True):
+        st.markdown("**C. Evaluación y Aptitud**")
+        tipo_evaluacion_oc = st.radio("Tipo de Evaluación:", ["INGRESO", "PERIÓDICO", "REINTEGRO", "RETIRO"], horizontal=True, key=f"val_tipo_ev_{fv}")
+        dictamen_oc = st.selectbox("Dictamen de Aptitud Médica:", ["APTO", "APTO EN OBSERVACIÓN", "APTO CON LIMITACIONES", "NO APTO"], key=f"val_dictamen_{fv}")
+        obs_oc = st.text_area("Recomendaciones / Observaciones:", height=100, key=f"val_obs_oc_{fv}").strip()
 
-    st.markdown("---")
-    st.subheader("3. Dictamen de Aptitud y Resoluciones")
-    col_d1, col_d2 = st.columns(2)
-    with col_d1:
-        uso_epp_oc = st.selectbox("Uso de EPP estandarizado:", ["Sí", "No", "Parcial", "No Aplica"], key=f"val_epp_{fv}")
-        dictamen_oc = st.selectbox("Dictamen de Aptitud Médica:", ["Apto", "Apto con Restricciones", "No Apto", "Evaluación Aplazada"], key=f"val_dictamen_{fv}")
-    with col_d2:
-        obs_oc = st.text_area("Observaciones / Restricciones:", height=100, key=f"val_obs_oc_{fv}").strip()
-
-    submitted_oc = st.button("Guardar Evaluación y Procesar Certificado", type="primary", width='stretch', key=f"btn_sub_oc_{fv}")
+    submitted_oc = st.button("Renderizar Formato y Guardar Evaluación", type="primary", width='stretch', key=f"btn_sub_oc_{fv}")
 
     if submitted_oc:
         if not id_paciente_oc or not cargo_oc:
-            st.error("Error Lógico: El Documento de Identidad y el Cargo son mandatorios para la certificación ocupacional.")
+            st.error("Error Lógico: Identificación y Cargo son mandatorios.")
         else:
             try:
-                # 1. Transacción a Supabase
+                fecha_actual_oc = datetime.now().strftime("%Y-%m-%d")
+                
+                # 1. Empaquetamiento de telemetría para Jinja2
+                datos_certificado = {
+                    "institucion": institucion_oc.upper(),
+                    "ruc": ruc_oc,
+                    "ciiu": ciiu_oc,
+                    "centro_trabajo": centro_trabajo_oc.upper(),
+                    "nombres": nombres_oc.upper(),
+                    "id_paciente": id_paciente_oc,
+                    "cargo": cargo_oc.upper(),
+                    "fecha_emision": fecha_actual_oc,
+                    "tipo_evaluacion": tipo_evaluacion_oc,
+                    "dictamen": dictamen_oc,
+                    "observaciones": obs_oc.upper(),
+                    "medico_nombre": perfil_activo['nombre'],
+                    "medico_codigo": "MSP-12345" # Parametrizable a futuro en la matriz de perfiles
+                }
+
+                # 2. Transacción a Supabase (Conservando el esquema compatible existente)
                 evaluacion_data = {
                     "id_paciente": id_paciente_oc,
                     "cargo": cargo_oc,
-                    "riesgos_fisicos": r_fisicos,
-                    "riesgos_ergonomicos": r_ergonomicos,
-                    "riesgos_biologicos": r_biologicos,
-                    "riesgos_quimicos": r_quimicos,
-                    "uso_epp": uso_epp_oc,
                     "dictamen": dictamen_oc,
                     "observaciones": obs_oc
                 }
-                # La API de Python para Supabase auto-serializa las listas a JSONB
                 supabase.table("evaluaciones_ocupacionales").insert(evaluacion_data).execute()
 
-                # 2. Generación del Certificado PDF
-                fecha_actual_oc = datetime.now().strftime("%d/%m/%Y")
-                nombres_impr_oc = nombres_oc if nombres_oc else "Empleado No Registrado"
-
-                pdf_bytes_oc = generar_certificado_aptitud_pdf(
-                    id_paciente_oc, nombres_impr_oc, edad_oc, fecha_actual_oc,
-                    cargo_oc, dictamen_oc, obs_oc, perfil_activo
-                )
+                # 3. Generación del Binario HTML a PDF
+                pdf_bytes_oc = generar_certificado_excel_pdf(datos_certificado)
 
                 st.session_state["pdf_ocupacional_reciente"] = pdf_bytes_oc
-                st.session_state["nombre_pdf_ocupacional_reciente"] = f"Aptitud_{id_paciente_oc}.pdf"
-
+                st.session_state["nombre_pdf_ocupacional_reciente"] = f"Aptitud_Matriz_{id_paciente_oc}.pdf"
                 st.session_state.form_version += 1
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Falla transaccional a nivel de base de datos ocupacional: {e}")
+                st.error(f"Falla transaccional o de renderizado: {e}")
