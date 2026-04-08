@@ -6,3 +6,5 @@ pandas
 PyMuPDF
 google-genai
 tenacity
+xhtml2pdf
+Jinja2
