@@ -1,8 +1,8 @@
 streamlit
 supabase>=2.4.3
 httpx>=0.27.0
-fpdf2
+fpdf
 pandas
-PyMuPDF==1.23.26
+PyMuPDF
 google-genai
 tenacity
