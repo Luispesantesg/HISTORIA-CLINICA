@@ -45,7 +45,6 @@ def generar_receta_pdf(id_paciente: str, nombres: str, edad: int, fecha: str, pl
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
     
-    # CORRECCIÓN PARA FPDF2: Retorno binario directo
     return bytes(pdf.output())
 
 
@@ -70,27 +69,23 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     # =========================================
     header_gris(" A. DATOS DEL ESTABLECIMIENTO - DATOS DEL USUARIO")
     
-    # Fila 1 - Cabeceras
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(50, 5, "INSTITUCION:", border="LTR")
     pdf.cell(40, 5, "RUC:", border="LTR")
     pdf.cell(30, 5, "CIIU:", border="LTR")
     pdf.cell(0, 5, "ESTABLECIMIENTO:", border="LTR", ln=True)
     
-    # Fila 1 - Datos
     pdf.set_font("Arial", '', 8)
     pdf.cell(50, 6, datos.get('institucion', ''), border="LBR")
     pdf.cell(40, 6, datos.get('ruc', ''), border="LBR")
     pdf.cell(30, 6, datos.get('ciiu', ''), border="LBR")
     pdf.cell(0, 6, datos.get('centro_trabajo', ''), border="LBR", ln=True)
     
-    # Fila 2 - Cabeceras
     pdf.set_font("Arial", 'B', 8)
     pdf.cell(80, 5, "APELLIDOS Y NOMBRES:", border="LTR")
     pdf.cell(40, 5, "IDENTIFICACION (CI):", border="LTR")
     pdf.cell(0, 5, "PUESTO DE TRABAJO:", border="LTR", ln=True)
     
-    # Fila 2 - Datos
     pdf.set_font("Arial", '', 8)
     pdf.cell(80, 6, datos.get('nombres', ''), border="LBR")
     pdf.cell(40, 6, datos.get('id_paciente', ''), border="LBR")
@@ -113,7 +108,6 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     
     ev = datos.get('tipo_evaluacion', '')
     pdf.set_font("Arial", '', 8)
-    # Lógica condicional para renderizar la X en la casilla correcta
     pdf.cell(20, 8, f"[{'X' if ev=='INGRESO' else ' '}] ING", border="TB")
     pdf.cell(20, 8, f"[{'X' if ev=='PERIÓDICO' else ' '}] PER", border="TB")
     pdf.cell(20, 8, f"[{'X' if ev=='REINTEGRO' else ' '}] REIN", border="TB")
@@ -122,7 +116,7 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     pdf.ln(5)
     
     # =========================================
-    # SECCION C
+    # SECCION C (CORREGIDA - ESTRUCTURA MULTICOLUMNA)
     # =========================================
     header_gris(" C. APTITUD MEDICA PARA EL TRABAJO")
     
@@ -130,9 +124,20 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     pdf.multi_cell(0, 6, " Despues de la valoracion medica ocupacional se certifica que la persona en mencion es calificada como:", border="LTR")
     
     dic = datos.get('dictamen', '')
-    pdf.set_font("Arial", 'B', 9)
-    aptitudes = f"[{'X' if dic=='APTO' else ' '}] APTO     [{'X' if dic=='APTO EN OBSERVACION' else ' '}] APTO EN OBSERV.     [{'X' if dic=='APTO CON LIMITACIONES' else ' '}] APTO CON LIMIT.     [{'X' if dic=='NO APTO' else ' '}] NO APTO"
-    pdf.cell(0, 8, aptitudes, border="LBR", align='C', ln=True)
+    pdf.set_font("Arial", 'B', 8)
+    
+    # Definición de celdas individuales
+    c1 = f"[{'X' if dic=='APTO' else ' '}] APTO"
+    c2 = f"[{'X' if dic=='APTO EN OBSERVACIÓN' else ' '}] EN OBSERVACION"
+    c3 = f"[{'X' if dic=='APTO CON LIMITACIONES' else ' '}] CON LIMITACIONES"
+    c4 = f"[{'X' if dic=='NO APTO' else ' '}] NO APTO"
+    
+    # Dibujo matemático de columnas (Garantiza que no exceda el margen)
+    pdf.cell(35, 8, c1, border="LB", align='C')
+    pdf.cell(50, 8, c2, border="B", align='C')
+    pdf.cell(60, 8, c3, border="B", align='C')
+    # El ancho "0" toma exactamente el resto de la hoja hasta el margen derecho
+    pdf.cell(0, 8, c4, border="BR", align='C', ln=True) 
     
     pdf.ln(5)
     
@@ -142,7 +147,6 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     header_gris(" D. RECOMENDACIONES / OBSERVACIONES")
     
     pdf.set_font("Arial", '', 9)
-    # Dejamos espacio en blanco para que el cuadro tenga altura de bloque de texto
     pdf.multi_cell(0, 5, " " + datos.get('observaciones', '') + "\n\n\n", border="LTR")
     
     legal_text = "Con este documento certifico que el trabajador se ha sometido a la evaluacion medica requerida para el puesto laboral y se le ha informado sobre los riesgos relacionados con el trabajo emitiendo recomendaciones relacionadas con su estado de salud. La presente certificacion se expide con base en el formulario de Evaluacion Ocupacional, el cual tiene caracter confidencial."
@@ -152,12 +156,11 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     pdf.ln(25)
     
     # =========================================
-    # SECCION E (Firmas y Sellos)
+    # SECCION E
     # =========================================
     pdf.set_font("Arial", 'B', 9)
     y = pdf.get_y()
     
-    # Dibujo de líneas de firma (Coordenadas exactas)
     pdf.line(30, y, 80, y)
     pdf.line(130, y, 180, y)
     
@@ -168,5 +171,4 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     pdf.cell(95, 5, datos.get('medico_nombre', ''), ln=False, align='C')
     pdf.cell(95, 5, f"CI: {datos.get('id_paciente', '')}", ln=True, align='C')
     
-    # CORRECCIÓN PARA FPDF2: Retorno binario directo
     return bytes(pdf.output())
