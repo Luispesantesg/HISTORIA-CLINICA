@@ -2,7 +2,6 @@ import streamlit as st
 import hmac
 
 def verificar_autenticacion() -> bool:
-    """Verifica el token de sesión y renderiza la barrera de seguridad si es necesario."""
     if st.session_state.get("autenticado", False):
         return True
 
