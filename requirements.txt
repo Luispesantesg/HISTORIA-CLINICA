@@ -3,8 +3,8 @@ supabase
 httpx
 fpdf2
 pandas
-PyMuPDF
+pymupdf==1.23.26
 google-genai
 tenacity
 xhtml2pdf
-Jinja2
+jinja2
