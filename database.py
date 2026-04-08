@@ -12,7 +12,6 @@ def init_connection() -> Client:
         st.error(f"Error de configuración: Credencial {e} no encontrada en secrets.toml.")
         st.stop()
 
-# Exportación de la instancia global del cliente
 try:
     supabase: Client = init_connection()
 except Exception as e:
