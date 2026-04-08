@@ -45,7 +45,8 @@ def generar_receta_pdf(id_paciente: str, nombres: str, edad: int, fecha: str, pl
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(0, 8, f"Firma y Sello: {perfil_medico['nombre']}", ln=True, align='C')
     
-    return pdf.output(dest='S').encode('latin-1', 'replace')
+    # CORRECCIÓN PARA FPDF2: Retorno binario directo
+    return bytes(pdf.output())
 
 
 def generar_certificado_excel_pdf(datos: dict) -> bytes:
@@ -167,4 +168,5 @@ def generar_certificado_excel_pdf(datos: dict) -> bytes:
     pdf.cell(95, 5, datos.get('medico_nombre', ''), ln=False, align='C')
     pdf.cell(95, 5, f"CI: {datos.get('id_paciente', '')}", ln=True, align='C')
     
-    return pdf.output(dest='S').encode('latin-1', 'replace')
+    # CORRECCIÓN PARA FPDF2: Retorno binario directo
+    return bytes(pdf.output())
